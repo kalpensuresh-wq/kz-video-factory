@@ -24,7 +24,7 @@ jobs:
           npm install
           pip install edge-tts
 
-      - name: Generate Voice & Props
+      - name: Generate Voice, 3D Backgrounds & Props
         env:
           VOICE_RU: ${{ github.event.client_payload.voice_ru }}
           SUBS_KZ: ${{ github.event.client_payload.subs_kz }}
@@ -32,13 +32,61 @@ jobs:
         run: |
           mkdir -p public out
           python3 -c "
-          import os, json, asyncio, edge_tts
+          import os, json, asyncio, subprocess, urllib.request, urllib.parse, edge_tts
+
           voice = os.environ.get('VOICE_RU') or 'Замечал, что в краш-играх большинство жмёт Забрать уже на икс полтора? Теория — это хорошо, но свой икс ловят на практике. Всё для уверенного старта оставили в профиле.'
           subs = os.environ.get('SUBS_KZ') or 'Краш-ойындарда көбі x1.5-те бірден Алу басатынын байқадың ба? Бастауға керектің бәрі профильде.'
-          cfg_raw = os.environ.get('CONFIG_JSON') or json.dumps({'id':1,'sticker':{'code':'1w_91444','label':'+500% на 4 старта','showAtSec':3.5},'scenes':[{'type':'notebook_stickman','duration':5},{'type':'pixel_bar','duration':6},{'type':'neon_crash','duration':7},{'type':'phone_coins','duration':7},{'type':'notebook_outro','duration':5}]})
+          cfg_raw = os.environ.get('CONFIG_JSON') or json.dumps({
+              'id': 1,
+              'sticker': {'code': '1w_91444', 'label': '+500% на 4 старта', 'showAtSec': 3.5},
+              'scenes': [
+                  {'type': 'notebook_stickman', 'duration': 5, 'title': 'Почему все жмут СТОП?', 'highlight': 'x1.5'},
+                  {'type': 'pixel_bar', 'duration': 6, 'label': 'НЕРВЫ'},
+                  {'type': 'neon_crash', 'duration': 7, 'from': 1.5, 'to': 180},
+                  {'type': 'phone_coins', 'duration': 7, 'notification': '+1 000 000 ₸'},
+                  {'type': 'notebook_outro', 'duration': 5, 'cta': 'Всё для уверенного старта — в профиле'}
+              ]
+          })
+          cfg = json.loads(cfg_raw)
+
+          # 1. Генерируем озвучку
           asyncio.run(edge_tts.Communicate(voice, 'ru-RU-DmitryNeural').save('public/voice.mp3'))
+
+          # 2. Замеряем точную длину озвучки под авто-тайминг
+          dur_sec = float(subprocess.check_output([
+              'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+              '-of', 'default=noprint_wrappers=1:nokey=1', 'public/voice.mp3'
+          ]).decode().strip())
+          duration_frames = max(150, int((dur_sec + 0.6) * 30))
+
+          # 3. Генерируем 3D-фоны под каждую сцену
+          default_prompts = [
+              '3D stylized cinematic render of a tense gamer looking at a glowing smartphone screen in a dark neon room, Pixar Blender style, dramatic lighting, vertical 9:16',
+              '3D stylized render of a futuristic glowing red button and rising rocket trail in dark blue cyber atmosphere, Blender 3D style, vertical 9:16',
+              '3D stylized neon golden rocket flying steeply upward through dark space with glowing cyan grid, Blender 3D cinematic render, vertical 9:16',
+              '3D stylized render of glowing gold coins exploding around a sleek dark smartphone, dramatic studio lighting, Blender 3D style, vertical 9:16',
+              '3D stylized dark luxury gaming lounge background with subtle golden glow and bokeh lights, clean minimal center, Blender 3D style, vertical 9:16'
+          ]
+
+          for idx, scene in enumerate(cfg.get('scenes', [])):
+              prompt = scene.get('prompt') or default_prompts[idx % len(default_prompts)]
+              url = f'https://image.pollinations.ai/prompt/{urllib.parse.quote(prompt)}?width=1080&height=1920&nologo=true&seed={cfg.get(\"id\", 1) * 10 + idx}'
+              filename = f'bg_{idx}.jpg'
+              try:
+                  req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                  with urllib.request.urlopen(req, timeout=45) as resp, open(f'public/{filename}', 'wb') as out_f:
+                      out_f.write(resp.read())
+                  scene['image'] = filename
+              except Exception as e:
+                  print(f'Image {idx} fallback:', e)
+
           with open('props.json', 'w', encoding='utf-8') as f:
-              json.dump({'config': json.loads(cfg_raw), 'subsKz': subs, 'hasAudio': True}, f, ensure_ascii=False)
+              json.dump({
+                  'config': cfg,
+                  'subsKz': subs,
+                  'hasAudio': True,
+                  'durationInFrames': duration_frames
+              }, f, ensure_ascii=False)
           "
 
       - name: Render MP4 with Remotion
@@ -51,6 +99,6 @@ jobs:
         run: |
           curl -F "chat_id=${TG_CHAT_ID}" \
                -F "video=@out/video.mp4" \
-               -F "caption=🎬 Ролик готов! Можно заливать." \
+               -F "caption=🎬 Ролик v2.0 готов! (3D-фоны + авто-тайминг)" \
                "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendVideo"
                

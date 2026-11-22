@@ -1,276 +1,438 @@
 import React from 'react';
 import {
-  AbsoluteFill, Audio, Composition, Img, interpolate, Sequence,
-  spring, staticFile, useCurrentFrame, useVideoConfig
+  AbsoluteFill,
+  Audio,
+  Composition,
+  Easing,
+  interpolate,
+  spring,
+  staticFile,
+  useCurrentFrame,
+  useVideoConfig,
 } from 'remotion';
-
-export interface SceneItem {
-  type: string;
-  duration: number;
-  title?: string;
-  highlight?: string;
-  label?: string;
-  from?: number;
-  to?: number;
-  notification?: string;
-  cta?: string;
-  prompt?: string;
-  image?: string;
-}
 
 export interface VideoProps {
   config: {
     id: number;
     sticker: { code: string; label: string; showAtSec: number };
-    scenes: SceneItem[];
+    scenes?: any[];
   };
   subsKz: string;
   hasAudio?: boolean;
   durationInFrames?: number;
 }
 
-// Фон с 3D ИИ-картинкой + живая камера (зум, панорама, лёгкий наклон) + виньетка
-const DynamicBackdrop: React.FC<{ image?: string; shake?: boolean; children: React.ReactNode }> = ({
-  image,
-  shake,
-  children,
-}) => {
+// 1. Фон с глубиной: движущаяся сетка + мягкие неоновые пятна
+const AmbientBackground: React.FC = () => {
   const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
-
-  const scale = interpolate(frame, [0, durationInFrames], [1.04, 1.18], { extrapolateRight: 'clamp' });
-  const panX = interpolate(frame, [0, durationInFrames], [-18, 18]);
-  const shakeX = shake && frame < 14 ? Math.sin(frame * 2.5) * (14 - frame) * 1.2 : 0;
-  const shakeY = shake && frame < 14 ? Math.cos(frame * 3) * (14 - frame) * 0.8 : 0;
-  const flash = interpolate(frame, [0, 6], [0.45, 0], { extrapolateRight: 'clamp' });
+  const gridOffset = (frame * 0.8) % 80;
+  const glowX = interpolate(Math.sin(frame / 45), [-1, 1], [15, 85]);
+  const glowY = interpolate(Math.cos(frame / 60), [-1, 1], [20, 75]);
 
   return (
-    <AbsoluteFill style={{ backgroundColor: '#020617', overflow: 'hidden', fontFamily: 'sans-serif' }}>
-      {image ? (
-        <Img
-          src={staticFile(image)}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            transform: `scale(${scale}) translate(${panX + shakeX}px, ${shakeY}px)`,
-            filter: 'brightness(0.62) contrast(1.08)',
-          }}
-        />
-      ) : (
-        <AbsoluteFill
-          style={{
-            background: 'radial-gradient(circle at 50% 30%, #1e293b 0%, #020617 100%)',
-          }}
-        />
-      )}
-
-      {/* Киношная виньетка */}
-      <AbsoluteFill
+    <AbsoluteFill style={{ backgroundColor: '#070B14', overflow: 'hidden' }}>
+      {/* Мягкое световое пятно */}
+      <div
         style={{
-          background:
-            'radial-gradient(circle, rgba(2,6,23,0.15) 35%, rgba(2,6,23,0.82) 100%)',
+          position: 'absolute',
+          left: `${glowX}%`,
+          top: `${glowY}%`,
+          width: 900,
+          height: 900,
+          transform: 'translate(-50%, -50%)',
+          background: 'radial-gradient(circle, rgba(56,189,248,0.18) 0%, rgba(7,11,20,0) 70%)',
+          filter: 'blur(40px)',
         }}
       />
-
-      {/* Контент сцены */}
-      <AbsoluteFill style={{ transform: `translate(${shakeX}px, ${shakeY}px)` }}>
-        {children}
-      </AbsoluteFill>
-
-      {/* Лёгкая вспышка на переходе */}
-      {flash > 0 && (
-        <AbsoluteFill style={{ backgroundColor: '#ffffff', opacity: flash }} />
-      )}
+      <div
+        style={{
+          position: 'absolute',
+          right: '-10%',
+          bottom: '10%',
+          width: 750,
+          height: 750,
+          background: 'radial-gradient(circle, rgba(250,204,21,0.12) 0%, rgba(7,11,20,0) 70%)',
+          filter: 'blur(50px)',
+        }}
+      />
+      {/* Тонкая инженерная сетка */}
+      <svg width="1080" height="1920" style={{ opacity: 0.14 }}>
+        <defs>
+          <pattern id="grid" width="80" height="80" patternUnits="userSpaceOnUse" patternTransform={`translate(0, ${gridOffset})`}>
+            <path d="M 80 0 L 0 0 0 80" fill="none" stroke="#94A3B8" strokeWidth="1.5" />
+          </pattern>
+        </defs>
+        <rect width="1080" height="1920" fill="url(#grid)" />
+      </svg>
     </AbsoluteFill>
   );
 };
 
-// Стеклянная карточка (стекломорфизм)
-const GlassCard: React.FC<{ children: React.ReactNode; style?: React.CSSProperties }> = ({ children, style }) => (
-  <div
-    style={{
-      background: 'rgba(15, 23, 42, 0.58)',
-      backdropFilter: 'blur(16px)',
-      border: '2px solid rgba(255, 255, 255, 0.18)',
-      borderRadius: 32,
-      padding: '36px 44px',
-      boxShadow: '0 24px 60px rgba(0, 0, 0, 0.45)',
-      ...style,
-    }}
-  >
-    {children}
-  </div>
-);
-
-const SceneHook: React.FC<{ scene: SceneItem }> = ({ scene }) => {
+// 2. Сцена 1 (0% – 28%): Ловушка 96% RTP + механический счётчик + рукописная обводка
+const ActHook: React.FC<{ progress: number }> = ({ progress }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const pop = spring({ frame, fps, config: { damping: 11 } });
 
-  return (
-    <DynamicBackdrop image={scene.image} shake>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: 60, textAlign: 'center' }}>
-        <GlassCard style={{ transform: `scale(${pop})`, maxWidth: 920 }}>
-          <div style={{ fontSize: 56, fontWeight: 900, color: '#f8fafc', lineHeight: 1.2 }}>
-            {scene.title || 'Почему все жмут СТОП?'}
-          </div>
-          {scene.highlight && (
-            <div
-              style={{
-                marginTop: 28,
-                fontSize: 124,
-                fontWeight: 900,
-                color: '#facc15',
-                textShadow: '0 0 35px rgba(250, 204, 21, 0.7)',
-              }}
-            >
-              {scene.highlight}
-            </div>
-          )}
-        </GlassCard>
-      </div>
-    </DynamicBackdrop>
+  const titleY = interpolate(spring({ frame, fps, config: { damping: 14 } }), [0, 1], [60, 0]);
+  const titleOp = interpolate(frame, [0, 12], [0, 1], { extrapolateRight: 'clamp' });
+
+  const rtpVal = Math.round(
+    interpolate(frame, [8, 42], [12, 96], {
+      easing: Easing.out(Easing.cubic),
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    })
   );
-};
 
-const SceneBar: React.FC<{ scene: SceneItem }> = ({ scene }) => {
-  const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
-  const progress = interpolate(frame, [0, durationInFrames - 10], [15, 95], { extrapolateRight: 'clamp' });
+  // Анимация зачёркивания "96 000 ₸"
+  const strikeProgress = interpolate(frame, [55, 75], [460, 0], {
+    easing: Easing.out(Easing.quad),
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
-  return (
-    <DynamicBackdrop image={scene.image}>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: 60 }}>
-        <GlassCard style={{ width: 860 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 40, fontWeight: 800, color: '#e2e8f0', marginBottom: 24 }}>
-            <span>{scene.label || 'НАПРЯЖЕНИЕ'}</span>
-            <span style={{ color: '#ef4444' }}>{Math.round(progress)}%</span>
-          </div>
-          <div style={{ width: '100%', height: 42, background: 'rgba(255,255,255,0.12)', borderRadius: 21, overflow: 'hidden' }}>
-            <div
-              style={{
-                width: `${progress}%`,
-                height: '100%',
-                background: 'linear-gradient(90deg, #facc15, #ef4444)',
-                borderRadius: 21,
-              }}
-            />
-          </div>
-        </GlassCard>
-      </div>
-    </DynamicBackdrop>
-  );
-};
-
-const SceneNeonCrash: React.FC<{ scene: SceneItem }> = ({ scene }) => {
-  const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
-  const from = scene.from ?? 1.5;
-  const to = scene.to ?? 180;
-  const val = interpolate(frame, [0, durationInFrames - 8], [from, to], { extrapolateRight: 'clamp' });
-  const endX = interpolate(frame, [0, durationInFrames], [120, 840]);
-  const endY = interpolate(frame, [0, durationInFrames], [330, 45]);
+  const exitY = interpolate(progress, [0.85, 1], [0, -140], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const exitOp = interpolate(progress, [0.85, 1], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
 
   return (
-    <DynamicBackdrop image={scene.image} shake>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: 50 }}>
+    <AbsoluteFill
+      style={{
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 70,
+        opacity: exitOp,
+        transform: `translateY(${exitY}px)`,
+      }}
+    >
+      <div style={{ textAlign: 'center', transform: `translateY(${titleY}px)`, opacity: titleOp }}>
         <div
           style={{
-            fontSize: 165,
-            fontWeight: 900,
-            color: '#22d3ee',
-            textShadow: '0 0 45px rgba(34, 211, 238, 0.85)',
+            display: 'inline-block',
+            padding: '10px 26px',
+            borderRadius: 999,
+            border: '1.5px solid rgba(56,189,248,0.45)',
+            background: 'rgba(56,189,248,0.12)',
+            color: '#38BDF8',
+            fontSize: 28,
+            fontWeight: 700,
+            letterSpacing: 2,
+            marginBottom: 28,
           }}
         >
-          x{val.toFixed(1)}
+          МАТЕМАТИКА СЛОТОВ
         </div>
-        <GlassCard style={{ marginTop: 30, padding: 24 }}>
-          <svg width="860" height="360" viewBox="0 0 900 380">
-            <path
-              d={`M 50 340 Q 450 310 ${endX} ${endY}`}
-              stroke="#facc15"
-              strokeWidth="14"
-              strokeLinecap="round"
-              fill="none"
-            />
-            <circle cx={endX} cy={endY} r="18" fill="#22d3ee" />
-          </svg>
-        </GlassCard>
+
+        <div style={{ fontSize: 64, fontWeight: 900, color: '#F8FAFC', lineHeight: 1.15 }}>
+          Ловушка отдачи
+        </div>
+
+        {/* Гигантский одометр RTP */}
+        <div
+          style={{
+            fontSize: 220,
+            fontWeight: 900,
+            color: '#FACC15',
+            lineHeight: 1,
+            marginTop: 24,
+            letterSpacing: -6,
+            textShadow: '0 0 60px rgba(250,204,21,0.35)',
+          }}
+        >
+          {rtpVal}%
+        </div>
+
+        {/* Карточка сравнения 100 000 -> 96 000 (перечёркнуто красным маркером) */}
+        <div
+          style={{
+            marginTop: 48,
+            background: 'rgba(15, 23, 42, 0.78)',
+            border: '1.5px solid rgba(255,255,255,0.12)',
+            borderRadius: 28,
+            padding: '34px 48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 28,
+            position: 'relative',
+          }}
+        >
+          <div style={{ fontSize: 44, fontWeight: 800, color: '#CBD5E1' }}>100 000 ₸</div>
+          <div style={{ fontSize: 40, color: '#64748B' }}>→</div>
+          <div style={{ position: 'relative', fontSize: 48, fontWeight: 900, color: '#F8FAFC' }}>
+            96 000 ₸
+            <svg
+              width="250"
+              height="60"
+              viewBox="0 0 250 60"
+              style={{ position: 'absolute', left: -12, top: 2, overflow: 'visible' }}
+            >
+              <path
+                d="M 5 48 Q 125 18 245 10"
+                fill="none"
+                stroke="#EF4444"
+                strokeWidth="10"
+                strokeLinecap="round"
+                strokeDasharray="460"
+                strokeDashoffset={strikeProgress}
+              />
+            </svg>
+          </div>
+        </div>
       </div>
-    </DynamicBackdrop>
+    </AbsoluteFill>
   );
 };
 
-const ScenePushCoins: React.FC<{ scene: SceneItem }> = ({ scene }) => {
-  const frame = useCurrentFrame();
+// 3. Сцена 2 (28% – 72%): Живой SVG-график дисперсии с просадкой и выстрелом +300 000 ₸
+const ActVarianceGraph: React.FC<{ localFrame: number; progress: number }> = ({ localFrame, progress }) => {
   const { fps } = useVideoConfig();
-  const slideY = interpolate(spring({ frame, fps, config: { damping: 12 } }), [0, 1], [-260, 220]);
+  const enterOp = interpolate(localFrame, [0, 14], [0, 1], { extrapolateRight: 'clamp' });
+  const exitOp = interpolate(progress, [0.88, 1], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+
+  // Прорисовка кривой графика
+  const pathLength = 1500;
+  const drawProgress = interpolate(localFrame, [10, 135], [0, 1], {
+    easing: Easing.inOut(Easing.cubic),
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
+  const dashOffset = pathLength * (1 - drawProgress);
+
+  // Живой счётчик баланса синхронно с графиком
+  const balance =
+    drawProgress < 0.55
+      ? Math.round(interpolate(drawProgress, [0, 0.55], [100000, 38000]))
+      : Math.round(interpolate(drawProgress, [0.55, 1], [38000, 340000], { easing: Easing.out(Easing.exp) }));
+
+  const isProfit = balance >= 100000;
+  const badgeScale =
+    drawProgress > 0.78 ? spring({ frame: Math.max(0, localFrame - 105), fps, config: { damping: 10 } }) : 0;
 
   return (
-    <DynamicBackdrop image={scene.image} shake>
-      {/* Реалистичный пуш сверху */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 60,
-          right: 60,
-          transform: `translateY(${slideY}px)`,
-        }}
-      >
-        <GlassCard style={{ display: 'flex', alignItems: 'center', gap: 28, padding: '28px 36px', background: 'rgba(15, 23, 42, 0.85)' }}>
-          <div style={{ fontSize: 64 }}>💰</div>
+    <AbsoluteFill
+      style={{
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 55,
+        opacity: enterOp * exitOp,
+      }}
+    >
+      <div style={{ width: '100%', maxWidth: 940 }}>
+        {/* Верхняя панель баланса */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-end',
+            marginBottom: 28,
+            padding: '0 10px',
+          }}
+        >
           <div>
-            <div style={{ fontSize: 28, color: '#94a3b8', fontWeight: 600 }}>Зачисление • сейчас</div>
-            <div style={{ fontSize: 60, fontWeight: 900, color: '#4ade80' }}>
-              {scene.notification || '+1 000 000 ₸'}
+            <div style={{ fontSize: 28, color: '#94A3B8', fontWeight: 700, letterSpacing: 1.5 }}>
+              ДИСПЕРСИЯ СЕССИИ
+            </div>
+            <div
+              style={{
+                fontSize: 82,
+                fontWeight: 900,
+                color: isProfit ? '#4ADE80' : '#F87171',
+                marginTop: 6,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {balance.toLocaleString('ru-RU')} ₸
             </div>
           </div>
-        </GlassCard>
-      </div>
 
-      {/* Разлетающиеся частицы-монеты */}
-      {Array.from({ length: 12 }).map((_, i) => {
-        const y = interpolate(frame, [0, 90], [1800, -100 - i * 80]);
-        const x = 90 + (i * 82) % 900;
-        const rot = frame * (4 + (i % 5));
-        return (
-          <div
-            key={i}
-            style={{
-              position: 'absolute',
-              left: x,
-              top: y,
-              fontSize: 54,
-              transform: `rotate(${rot}deg)`,
-              opacity: 0.85,
-            }}
-          >
-            🪙
+          {badgeScale > 0 && (
+            <div
+              style={{
+                transform: `scale(${badgeScale})`,
+                background: 'rgba(74, 222, 128, 0.16)',
+                border: '2px solid #4ADE80',
+                color: '#4ADE80',
+                padding: '12px 24px',
+                borderRadius: 18,
+                fontSize: 34,
+                fontWeight: 900,
+              }}
+            >
+              +300 000 ₸
+            </div>
+          )}
+        </div>
+
+        {/* Карточка с векторным графиком */}
+        <div
+          style={{
+            background: 'rgba(15, 23, 42, 0.8)',
+            border: '1.5px solid rgba(255,255,255,0.12)',
+            borderRadius: 32,
+            padding: '40px 30px',
+            boxShadow: '0 30px 80px rgba(0,0,0,0.5)',
+          }}
+        >
+          <svg width="880" height="480" viewBox="0 0 880 480">
+            {/* Базовая линия старта (100 000 ₸) */}
+            <line x1="20" y1="300" x2="860" y2="300" stroke="#475569" strokeWidth="2" strokeDasharray="10 10" />
+            <text x="26" y="286" fill="#64748B" fontSize="22" fontWeight="700">
+              СТАРТ 100 000 ₸
+            </text>
+
+            {/* Главная кривая: сначала просадка, потом резкий пробой вверх */}
+            <path
+              d="M 20 300 C 120 310, 170 370, 260 390 C 350 410, 420 430, 500 415 C 580 400, 620 260, 700 140 C 750 65, 810 45, 855 35"
+              fill="none"
+              stroke={isProfit ? '#38BDF8' : '#F87171'}
+              strokeWidth="12"
+              strokeLinecap="round"
+              strokeDasharray={pathLength}
+              strokeDashoffset={dashOffset}
+              style={{ filter: `drop-shadow(0 0 18px ${isProfit ? 'rgba(56,189,248,0.75)' : 'rgba(248,113,113,0.6)'})` }}
+            />
+          </svg>
+
+          {/* Нижние метки */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 14, color: '#64748B', fontSize: 24, fontWeight: 700 }}>
+            <span>10 спинов</span>
+            <span>50 спинов</span>
+            <span>120 спинов</span>
+            <span style={{ color: '#FACC15' }}>МНОЖИТЕЛЬ</span>
           </div>
-        );
-      })}
-    </DynamicBackdrop>
+        </div>
+      </div>
+    </AbsoluteFill>
   );
 };
 
-const SceneOutro: React.FC<{ scene: SceneItem }> = ({ scene }) => {
-  const frame = useCurrentFrame();
+// 4. Сцена 3 (72% – 100%): Сравнение дистанции + чистый CTA
+const ActDistanceOutro: React.FC<{ localFrame: number }> = ({ localFrame }) => {
   const { fps } = useVideoConfig();
-  const scale = spring({ frame, fps, config: { damping: 12 } });
+  const enter = spring({ frame: localFrame, fps, config: { damping: 14 } });
+
+  const bar1 = interpolate(spring({ frame: Math.max(0, localFrame - 6), fps, config: { damping: 15 } }), [0, 1], [0, 28]);
+  const bar2 = interpolate(spring({ frame: Math.max(0, localFrame - 16), fps, config: { damping: 15 } }), [0, 1], [0, 96]);
 
   return (
-    <DynamicBackdrop image={scene.image}>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: 70, textAlign: 'center' }}>
-        <GlassCard style={{ transform: `scale(${scale})`, border: '3px solid #facc15' }}>
-          <div style={{ fontSize: 60, fontWeight: 900, color: '#ffffff', lineHeight: 1.25 }}>
-            {scene.cta || 'Всё для уверенного старта — в профиле'}
+    <AbsoluteFill
+      style={{
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 65,
+        opacity: enter,
+        transform: `scale(${interpolate(enter, [0, 1], [0.92, 1])})`,
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          maxWidth: 920,
+          background: 'rgba(15, 23, 42, 0.85)',
+          border: '2px solid rgba(250, 204, 21, 0.45)',
+          borderRadius: 34,
+          padding: '48px 44px',
+          boxShadow: '0 25px 70px rgba(0,0,0,0.55)',
+        }}
+      >
+        <div style={{ fontSize: 44, fontWeight: 900, color: '#F8FAFC', marginBottom: 38 }}>
+          Решает запас на дистанцию
+        </div>
+
+        {/* Полоска 1 */}
+        <div style={{ marginBottom: 30 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 28, color: '#94A3B8', fontWeight: 700, marginBottom: 10 }}>
+            <span>Короткий банк</span>
+            <span>Высокий риск</span>
           </div>
-          <div style={{ fontSize: 96, marginTop: 24 }}>👇</div>
-        </GlassCard>
+          <div style={{ height: 28, background: 'rgba(255,255,255,0.08)', borderRadius: 14, overflow: 'hidden' }}>
+            <div style={{ width: `${bar1}%`, height: '100%', background: '#EF4444', borderRadius: 14 }} />
+          </div>
+        </div>
+
+        {/* Полоска 2 */}
+        <div style={{ marginBottom: 44 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 28, color: '#FACC15', fontWeight: 800, marginBottom: 10 }}>
+            <span>Банк с бонусом +500%</span>
+            <span>Запас на икс</span>
+          </div>
+          <div style={{ height: 28, background: 'rgba(255,255,255,0.08)', borderRadius: 14, overflow: 'hidden' }}>
+            <div
+              style={{
+                width: `${bar2}%`,
+                height: '100%',
+                background: 'linear-gradient(90deg, #38BDF8, #FACC15)',
+                borderRadius: 14,
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Финальный CTA */}
+        <div
+          style={{
+            borderTop: '1px solid rgba(255,255,255,0.12)',
+            paddingTop: 32,
+            textAlign: 'center',
+            fontSize: 40,
+            fontWeight: 900,
+            color: '#FFFFFF',
+          }}
+        >
+          Всё для уверенного старта — <span style={{ color: '#FACC15' }}>в профиле</span>
+        </div>
       </div>
-    </DynamicBackdrop>
+    </AbsoluteFill>
+  );
+};
+
+// 5. Караоке-субтитры на казахском (без чёрных плашек, стабильная вёрстка, подсветка слов)
+const KaraokeCaptions: React.FC<{ text: string }> = ({ text }) => {
+  const frame = useCurrentFrame();
+  const { durationInFrames } = useVideoConfig();
+
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return null;
+
+  const activeWordIdx = Math.min(words.length - 1, Math.floor((frame / durationInFrames) * words.length));
+  const chunkSize = 5;
+  const chunkIdx = Math.floor(activeWordIdx / chunkSize);
+  const start = chunkIdx * chunkSize;
+  const visibleWords = words.slice(start, start + chunkSize);
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        bottom: 165,
+        left: 60,
+        right: 60,
+        display: 'flex',
+        flexWrap: 'wrap',
+        justifyContent: 'center',
+        gap: '10px 14px',
+        fontFamily: 'sans-serif',
+      }}
+    >
+      {visibleWords.map((word, i) => {
+        const isCurrent = start + i === activeWordIdx;
+        return (
+          <span
+            key={`${start + i}`}
+            style={{
+              fontSize: 44,
+              fontWeight: 900,
+              color: isCurrent ? '#FACC15' : '#F8FAFC',
+              textShadow: '0 4px 18px rgba(0,0,0,0.95)',
+              transform: isCurrent ? 'scale(1.08)' : 'scale(1)',
+              display: 'inline-block',
+            }}
+          >
+            {word}
+          </span>
+        );
+      })}
+    </div>
   );
 };
 
@@ -278,90 +440,65 @@ const MainVideo: React.FC<VideoProps> = ({ config, subsKz, hasAudio }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
 
-  // Прогресс-бар сверху
-  const progressPct = (frame / durationInFrames) * 100;
+  const t = frame / durationInFrames;
+  const act1End = Math.round(durationInFrames * 0.28);
+  const act2End = Math.round(durationInFrames * 0.72);
 
-  // Разбивка казахских субтитров по фразам
-  const chunks = subsKz.split(/(?<=[.!?])\s+/).filter(Boolean);
-  const chunkIndex = Math.min(chunks.length - 1, Math.floor((frame / durationInFrames) * chunks.length));
+  // Лёгкий зум камеры на протяжении всего ролика
+  const cameraScale = interpolate(frame, [0, durationInFrames], [1, 1.05]);
 
-  // Стикер-заметка в правом верхнем углу
+  // Аккуратный бейдж промокода сверху
   const showAt = (config.sticker?.showAtSec ?? 3.5) * fps;
-  const showSticker = frame >= showAt;
-  const stickerScale = showSticker ? spring({ frame: frame - showAt, fps, config: { damping: 10 } }) : 0;
-
-  // Пропорциональное распределение сцен под точную длину озвучки
-  const totalDefined = config.scenes.reduce((acc, s) => acc + (s.duration || 5), 0) || 30;
-  let offset = 0;
+  const stickerSpring = frame >= showAt ? spring({ frame: frame - showAt, fps, config: { damping: 12 } }) : 0;
 
   return (
-    <AbsoluteFill>
+    <AbsoluteFill style={{ fontFamily: 'sans-serif', backgroundColor: '#070B14' }}>
       {hasAudio && <Audio src={staticFile('voice.mp3')} />}
 
-      {config.scenes.map((scene, idx) => {
-        const isLast = idx === config.scenes.length - 1;
-        const dur = isLast
-          ? Math.max(1, durationInFrames - offset)
-          : Math.max(1, Math.round(((scene.duration || 5) / totalDefined) * durationInFrames));
-        const from = offset;
-        offset += dur;
+      <AbsoluteFill style={{ transform: `scale(${cameraScale})` }}>
+        <AmbientBackground />
 
-        return (
-          <Sequence key={idx} from={from} durationInFrames={dur}>
-            {scene.type === 'notebook_stickman' && <SceneHook scene={scene} />}
-            {scene.type === 'pixel_bar' && <SceneBar scene={scene} />}
-            {scene.type === 'neon_crash' && <SceneNeonCrash scene={scene} />}
-            {scene.type === 'phone_coins' && <ScenePushCoins scene={scene} />}
-            {scene.type === 'notebook_outro' && <SceneOutro scene={scene} />}
-          </Sequence>
-        );
-      })}
+        {frame < act1End && <ActHook progress={frame / act1End} />}
 
-      {/* Неоновая полоска прогресса сверху */}
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 10, background: 'rgba(255,255,255,0.15)' }}>
-        <div style={{ width: `${progressPct}%`, height: '100%', background: 'linear-gradient(90deg, #22d3ee, #facc15)' }} />
+        {frame >= act1End && frame < act2End && (
+          <ActVarianceGraph localFrame={frame - act1End} progress={(frame - act1End) / (act2End - act1End)} />
+        )}
+
+        {frame >= act2End && <ActDistanceOutro localFrame={frame - act2End} />}
+      </AbsoluteFill>
+
+      {/* Полоска прогресса сверху */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 8, background: 'rgba(255,255,255,0.1)' }}>
+        <div style={{ width: `${t * 100}%`, height: '100%', background: 'linear-gradient(90deg, #38BDF8, #FACC15)' }} />
       </div>
 
-      {/* Бумажный стикер с промокодом */}
-      {showSticker && (
+      {/* Стильный бейдж промокода */}
+      {stickerSpring > 0 && (
         <div
           style={{
             position: 'absolute',
-            top: 95,
-            right: 40,
-            background: '#fef08a',
-            color: '#0f172a',
-            padding: '16px 24px',
-            borderRadius: 10,
-            boxShadow: '0 14px 30px rgba(0,0,0,0.45)',
-            transform: `rotate(3deg) scale(${stickerScale})`,
-            textAlign: 'center',
-            fontFamily: 'sans-serif',
+            top: 85,
+            right: 45,
+            transform: `scale(${stickerSpring})`,
+            background: 'rgba(15, 23, 42, 0.9)',
+            border: '2px solid #FACC15',
+            borderRadius: 16,
+            padding: '12px 22px',
+            boxShadow: '0 12px 30px rgba(0,0,0,0.45)',
+            textAlign: 'right',
           }}
         >
-          <div style={{ fontSize: 34, fontWeight: 900, letterSpacing: 1 }}>{config.sticker.code}</div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: '#dc2626', marginTop: 4 }}>{config.sticker.label}</div>
+          <div style={{ fontSize: 32, fontWeight: 900, color: '#FACC15', letterSpacing: 1 }}>
+            {config.sticker.code}
+          </div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: '#E2E8F0', marginTop: 2 }}>
+            {config.sticker.label}
+          </div>
         </div>
       )}
 
-      {/* Аккуратные субтитры на казахском внизу */}
-      <div style={{ position: 'absolute', bottom: 155, left: 55, right: 55, textAlign: 'center', fontFamily: 'sans-serif' }}>
-        <span
-          style={{
-            background: 'rgba(2, 6, 23, 0.82)',
-            color: '#ffffff',
-            fontSize: 34,
-            fontWeight: 700,
-            padding: '12px 24px',
-            borderRadius: 14,
-            lineHeight: 1.35,
-            display: 'inline-block',
-            border: '1px solid rgba(255,255,255,0.15)',
-          }}
-        >
-          {chunks[chunkIndex] || ''}
-        </span>
-      </div>
+      {/* Караоке-субтитры на казахском */}
+      <KaraokeCaptions text={subsKz} />
     </AbsoluteFill>
   );
 };
@@ -378,11 +515,11 @@ export const RemotionRoot: React.FC = () => (
       durationInFrames: props.durationInFrames || 900,
     })}
     defaultProps={{
-      config: { id: 1, sticker: { code: '1w_91444', label: '+500% на 4 старта', showAtSec: 3.5 }, scenes: [] },
+      config: { id: 3, sticker: { code: '1w_91444', label: '+500% на 4 старта', showAtSec: 3.5 } },
       subsKz: '',
       hasAudio: false,
       durationInFrames: 900,
     }}
   />
 );
-    
+        

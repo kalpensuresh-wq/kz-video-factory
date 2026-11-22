@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: |
           npm install
-          pip install edge-tts
+          pip install edge-tts mutagen
 
       - name: Generate Voice, 3D Backgrounds & Props
         env:
@@ -32,7 +32,8 @@ jobs:
         run: |
           mkdir -p public out
           python3 -c "
-          import os, json, asyncio, subprocess, urllib.request, urllib.parse, edge_tts
+          import os, json, asyncio, urllib.request, urllib.parse, edge_tts
+          from mutagen.mp3 import MP3
 
           voice = os.environ.get('VOICE_RU') or 'Замечал, что в краш-играх большинство жмёт Забрать уже на икс полтора? Теория — это хорошо, но свой икс ловят на практике. Всё для уверенного старта оставили в профиле.'
           subs = os.environ.get('SUBS_KZ') or 'Краш-ойындарда көбі x1.5-те бірден Алу басатынын байқадың ба? Бастауға керектің бәрі профильде.'
@@ -52,11 +53,8 @@ jobs:
           # 1. Генерируем озвучку
           asyncio.run(edge_tts.Communicate(voice, 'ru-RU-DmitryNeural').save('public/voice.mp3'))
 
-          # 2. Замеряем точную длину озвучки под авто-тайминг
-          dur_sec = float(subprocess.check_output([
-              'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
-              '-of', 'default=noprint_wrappers=1:nokey=1', 'public/voice.mp3'
-          ]).decode().strip())
+          # 2. Замеряем точную длину озвучки через mutagen
+          dur_sec = MP3('public/voice.mp3').info.length
           duration_frames = max(150, int((dur_sec + 0.6) * 30))
 
           # 3. Генерируем 3D-фоны под каждую сцену

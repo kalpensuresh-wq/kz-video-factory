@@ -1,0 +1,56 @@
+name: Render Video
+
+on:
+  repository_dispatch:
+    types: [render_video]
+  workflow_dispatch:
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          npm install
+          pip install edge-tts
+
+      - name: Generate Voice & Props
+        env:
+          VOICE_RU: ${{ github.event.client_payload.voice_ru }}
+          SUBS_KZ: ${{ github.event.client_payload.subs_kz }}
+          CONFIG_JSON: ${{ github.event.client_payload.config_json }}
+        run: |
+          mkdir -p public out
+          python3 -c "
+          import os, json, asyncio, edge_tts
+          voice = os.environ.get('VOICE_RU') or 'Замечал, что в краш-играх большинство жмёт Забрать уже на икс полтора? Теория — это хорошо, но свой икс ловят на практике. Всё для уверенного старта оставили в профиле.'
+          subs = os.environ.get('SUBS_KZ') or 'Краш-ойындарда көбі x1.5-те бірден Алу басатынын байқадың ба? Бастауға керектің бәрі профильде.'
+          cfg_raw = os.environ.get('CONFIG_JSON') or json.dumps({'id':1,'sticker':{'code':'1w_91444','label':'+500% на 4 старта','showAtSec':3.5},'scenes':[{'type':'notebook_stickman','duration':5},{'type':'pixel_bar','duration':6},{'type':'neon_crash','duration':7},{'type':'phone_coins','duration':7},{'type':'notebook_outro','duration':5}]})
+          asyncio.run(edge_tts.Communicate(voice, 'ru-RU-DmitryNeural').save('public/voice.mp3'))
+          with open('props.json', 'w', encoding='utf-8') as f:
+              json.dump({'config': json.loads(cfg_raw), 'subsKz': subs, 'hasAudio': True}, f, ensure_ascii=False)
+          "
+
+      - name: Render MP4 with Remotion
+        run: npx remotion render src/index.ts MainVideo out/video.mp4 --props=./props.json
+
+      - name: Send MP4 to Telegram
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          curl -F "chat_id=${TG_CHAT_ID}" \
+               -F "video=@out/video.mp4" \
+               -F "caption=🎬 Ролик готов! Можно заливать." \
+               "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendVideo"
+               

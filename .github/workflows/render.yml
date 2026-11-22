@@ -24,58 +24,211 @@ jobs:
           npm install
           pip install --upgrade edge-tts mutagen gTTS
 
-      - name: Generate Voice & Props
+      - name: Synthesize SFX, Generate Multi-Voice TTS & Props
         env:
           VOICE_RU: ${{ github.event.client_payload.voice_ru }}
           SUBS_KZ: ${{ github.event.client_payload.subs_kz }}
           CONFIG_JSON: ${{ github.event.client_payload.config_json }}
         run: |
-          mkdir -p public out
+          mkdir -p public/sfx out
           python3 - << 'EOF'
-          import os, json, time, asyncio, edge_tts
+          import os, json, time, math, wave, struct, random, asyncio, edge_tts
           from mutagen.mp3 import MP3
           from gtts import gTTS
 
-          voice = os.environ.get('VOICE_RU') or 'Тестовая озвучка. Всё для уверенного старта оставили в профиле.'
-          subs = os.environ.get('SUBS_KZ') or 'Бастауға керектің бәрі профильде.'
-          cfg_raw = os.environ.get('CONFIG_JSON') or json.dumps({
-              'id': 1,
-              'theme': 'dark_luxe',
-              'sticker': {'code': '1w_91444', 'label': '+500% на 4 старта', 'showAtSec': 3.0},
-              'scenes': []
-          })
-          cfg = json.loads(cfg_raw)
+          # =====================================================================
+          # 1. BUILT-IN PROCEDURAL SFX & BGM SYNTHESIZER
+          # Checks public/sfx/{name}.mp3 or .wav first; synthesizes if missing
+          # =====================================================================
+          SR = 44100
 
-          # Голос и скорость можно менять прямо из JSON (по умолчанию энергичный +10%)
-          voice_name = cfg.get('voiceName', 'ru-RU-DmitryNeural')
-          voice_rate = cfg.get('voiceRate', '+10%')
+          def write_wav(path, samples):
+              with wave.open(path, 'w') as wf:
+                  wf.setnchannels(1)
+                  wf.setsampwidth(2)
+                  wf.setframerate(SR)
+                  buf = bytearray()
+                  for s in samples:
+                      val = max(-1.0, min(1.0, s))
+                      buf.extend(struct.pack('<h', int(val * 32767)))
+                  wf.writeframes(buf)
 
-          tts_ok = False
-          for attempt in range(3):
-              try:
-                  asyncio.run(
-                      edge_tts.Communicate(voice, voice_name, rate=voice_rate).save('public/voice.mp3')
-                  )
-                  if os.path.exists('public/voice.mp3') and os.path.getsize('public/voice.mp3') > 1000:
-                      tts_ok = True
-                      break
-              except Exception as e:
-                  print(f'edge-tts attempt {attempt + 1} failed:', e)
-                  time.sleep(2)
+          def ensure_sfx():
+              rng = random.Random(42)
+              resolved = {}
 
-          if not tts_ok:
-              print('Using gTTS fallback...')
-              gTTS(text=voice, lang='ru').save('public/voice.mp3')
+              def find_custom(name):
+                  for ext in ('mp3', 'wav'):
+                      p = f'public/sfx/{name}.{ext}'
+                      if os.path.exists(p) and os.path.getsize(p) > 500:
+                          return f'sfx/{name}.{ext}'
+                  return None
 
-          dur_sec = MP3('public/voice.mp3').info.length
-          duration_frames = max(150, int((dur_sec + 0.5) * 30))
+              # pop.wav
+              custom = find_custom('pop')
+              if custom:
+                  resolved['pop'] = custom
+              else:
+                  n = int(SR * 0.14)
+                  samples = [
+                      0.75 * math.exp(-(i/SR)*28.0) * min(1.0, (i/SR)/0.005)
+                      * math.sin(2*math.pi*(320.0 + 580.0*(1.0 - math.exp(-(i/SR)*35.0)))*(i/SR))
+                      for i in range(n)
+                  ]
+                  write_wav('public/sfx/pop.wav', samples)
+                  resolved['pop'] = 'sfx/pop.wav'
+
+              # whoosh.wav
+              custom = find_custom('whoosh')
+              if custom:
+                  resolved['whoosh'] = custom
+              else:
+                  n = int(SR * 0.32)
+                  samples, prev = [], 0.0
+                  for i in range(n):
+                      u = i / n
+                      env = math.sin(math.pi * u) ** 1.6
+                      alpha = 0.04 + 0.25 * math.sin(math.pi * u)
+                      prev = prev + alpha * (rng.uniform(-1.0, 1.0) - prev)
+                      samples.append(0.7 * env * prev)
+                  write_wav('public/sfx/whoosh.wav', samples)
+                  resolved['whoosh'] = 'sfx/whoosh.wav'
+
+              # coin.wav
+              custom = find_custom('coin')
+              if custom:
+                  resolved['coin'] = custom
+              else:
+                  n = int(SR * 0.45)
+                  samples = []
+                  for i in range(n):
+                      t = i / SR
+                      env = math.exp(-t * 8.5) * min(1.0, t / 0.004)
+                      f = 987.77 if t < 0.085 else 1318.51
+                      samples.append(0.55 * env * (math.sin(2*math.pi*f*t) + 0.35*math.sin(4*math.pi*f*t)))
+                  write_wav('public/sfx/coin.wav', samples)
+                  resolved['coin'] = 'sfx/coin.wav'
+
+              # win.wav
+              custom = find_custom('win')
+              if custom:
+                  resolved['win'] = custom
+              else:
+                  n = int(SR * 0.95)
+                  samples = [0.0] * n
+                  for start_t, freq in [(0.00, 523.25), (0.08, 659.25), (0.16, 783.99), (0.24, 1046.50)]:
+                      si = int(start_t * SR)
+                      for i in range(si, n):
+                          t = (i - si) / SR
+                          env = math.exp(-t * 4.2) * min(1.0, t / 0.008)
+                          samples[i] += 0.26 * env * (math.sin(2*math.pi*freq*t) + 0.25*math.sin(4*math.pi*freq*t))
+                  write_wav('public/sfx/win.wav', samples)
+                  resolved['win'] = 'sfx/win.wav'
+
+              # bgm.wav (8-second seamless lo-fi pulse loop)
+              custom = find_custom('bgm')
+              if custom:
+                  resolved['bgm'] = custom
+              else:
+                  n = int(SR * 8.0)
+                  samples = [0.0] * n
+                  beat_sec = 60.0 / 90.0
+                  chords = [
+                      [220.0, 261.63, 329.63],
+                      [174.61, 220.0, 261.63],
+                      [196.0, 246.94, 293.66],
+                      [164.81, 196.0, 246.94],
+                  ]
+                  for i in range(n):
+                      t = i / SR
+                      c_idx = int(t / 2.0) % len(chords)
+                      pad_env = math.sin(math.pi * ((t % 2.0) / 2.0)) ** 0.5
+                      pad = sum(math.sin(2*math.pi*f*t) for f in chords[c_idx]) * 0.08 * pad_env
+                      beat_pos = (t / beat_sec) % 4.0
+                      kick = 0.0
+                      for b in (0.0, 2.0):
+                          dt = beat_pos - b
+                          if 0 <= dt < 0.22:
+                              kt = dt * beat_sec
+                              kf = 48.0 + 70.0 * math.exp(-kt * 28.0)
+                              kick += 0.32 * math.exp(-kt * 14.0) * math.sin(2*math.pi*kf*kt)
+                      eighth = (t / (beat_sec * 0.5)) % 1.0
+                      hat = 0.045 * (1.0 - eighth / 0.04) * rng.uniform(-1.0, 1.0) if eighth < 0.04 else 0.0
+                      samples[i] = pad + kick + hat
+                  write_wav('public/sfx/bgm.wav', samples)
+                  resolved['bgm'] = 'sfx/bgm.wav'
+
+              return resolved
+
+          sfx_files = ensure_sfx()
+
+          # =====================================================================
+          # 2. MULTI-VOICE TTS GENERATOR WITH EXACT PER-LINE TIMING
+          # =====================================================================
+          def tts_save(text, out_path, voice='ru-RU-DmitryNeural', rate='+8%', pitch='+0Hz'):
+              for attempt in range(3):
+                  try:
+                      asyncio.run(edge_tts.Communicate(text, voice, rate=rate, pitch=pitch).save(out_path))
+                      if os.path.exists(out_path) and os.path.getsize(out_path) > 800:
+                          return
+                  except Exception as e:
+                      print(f'edge-tts attempt {attempt+1} failed:', e)
+                      time.sleep(1.5)
+              print('Fallback to gTTS for:', out_path)
+              gTTS(text=text, lang='ru').save(out_path)
+
+          voice_fallback = os.environ.get('VOICE_RU') or 'Тестовый ролик готов.'
+          subs_fallback = os.environ.get('SUBS_KZ') or 'Бастауға керектің бәрі профильде.'
+          cfg_raw = os.environ.get('CONFIG_JSON') or '{}'
+          cfg = json.loads(cfg_raw) if cfg_raw.strip() else {}
+
+          dialogue = cfg.get('dialogue') or []
+          chars = cfg.get('characters') or {}
+          left_c = chars.get('left') or {}
+          right_c = chars.get('right') or {}
+
+          FPS = 30
+          GAP_FRAMES = 6
+
+          if dialogue:
+              cursor = 0
+              for idx, line in enumerate(dialogue):
+                  spk = line.get('speaker', 'left')
+                  c_cfg = left_c if spk == 'left' else right_c
+                  default_voice = 'ru-RU-SvetlanaNeural' if c_cfg.get('role') == 'woman' else 'ru-RU-DmitryNeural'
+                  default_pitch = '+5Hz' if spk == 'left' else '-10Hz'
+                  default_rate = '+12%' if spk == 'left' else '+5%'
+
+                  v_name = c_cfg.get('voice', default_voice)
+                  v_rate = c_cfg.get('rate', default_rate)
+                  v_pitch = c_cfg.get('pitch', default_pitch)
+
+                  fname = f'line_{idx}.mp3'
+                  fpath = f'public/{fname}'
+                  tts_save(line.get('ru', ''), fpath, voice=v_name, rate=v_rate, pitch=v_pitch)
+
+                  dur_sec = MP3(fpath).info.length
+                  dur_frames = max(36, int(math.ceil(dur_sec * FPS)) + GAP_FRAMES)
+                  line['audioFile'] = fname
+                  line['fromFrame'] = cursor
+                  line['durationInFrames'] = dur_frames
+                  cursor += dur_frames
+
+              total_frames = max(150, cursor + 15)
+              has_audio = False
+          else:
+              tts_save(voice_fallback, 'public/voice.mp3')
+              dur_sec = MP3('public/voice.mp3').info.length
+              total_frames = max(150, int((dur_sec + 0.6) * FPS))
+              has_audio = True
 
           with open('props.json', 'w', encoding='utf-8') as f:
               json.dump({
                   'config': cfg,
-                  'subsKz': subs,
-                  'hasAudio': True,
-                  'durationInFrames': duration_frames
+                  'subsKz': subs_fallback,
+                  'hasAudio': has_audio,
+                  'durationInFrames': total_frames,
+                  'sfxFiles': sfx_files
               }, f, ensure_ascii=False)
           EOF
 
@@ -89,5 +242,5 @@ jobs:
         run: |
           curl -F "chat_id=${TG_CHAT_ID}" \
                -F "video=@out/video.mp4" \
-               -F "caption=🎬 Новый ролик готов! (Master Engine v5.0)" \
+               -F "caption=🎬 Ролик v6.0 готов! (Диалог + КЗ локация + SFX)" \
                "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendVideo"

@@ -36,20 +36,26 @@ jobs:
           from mutagen.mp3 import MP3
           from gtts import gTTS
 
-          voice = os.environ.get('VOICE_RU') or 'Думаешь, если у слота отдача девяносто шесть процентов, то со ста тысяч тенге ты гарантированно вернёшь девяносто шесть? Это главная ловушка. Всё для уверенного старта оставили в профиле.'
-          subs = os.environ.get('SUBS_KZ') or 'Слоттың RTP-і 96% болса, 100 000 теңгеден 96 000 қайтады деп ойлайсың ба? Бастауға керектің бәрі профильде.'
+          voice = os.environ.get('VOICE_RU') or 'Тестовая озвучка. Всё для уверенного старта оставили в профиле.'
+          subs = os.environ.get('SUBS_KZ') or 'Бастауға керектің бәрі профильде.'
           cfg_raw = os.environ.get('CONFIG_JSON') or json.dumps({
-              'id': 3,
-              'sticker': {'code': '1w_91444', 'label': '+500% на 4 старта', 'showAtSec': 3.5},
+              'id': 1,
+              'theme': 'dark_luxe',
+              'sticker': {'code': '1w_91444', 'label': '+500% на 4 старта', 'showAtSec': 3.0},
               'scenes': []
           })
           cfg = json.loads(cfg_raw)
 
-          # 1. Генерируем озвучку: 3 попытки через edge-tts, при сбое — резервный gTTS
+          # Голос и скорость можно менять прямо из JSON (по умолчанию энергичный +10%)
+          voice_name = cfg.get('voiceName', 'ru-RU-DmitryNeural')
+          voice_rate = cfg.get('voiceRate', '+10%')
+
           tts_ok = False
           for attempt in range(3):
               try:
-                  asyncio.run(edge_tts.Communicate(voice, 'ru-RU-DmitryNeural').save('public/voice.mp3'))
+                  asyncio.run(
+                      edge_tts.Communicate(voice, voice_name, rate=voice_rate).save('public/voice.mp3')
+                  )
                   if os.path.exists('public/voice.mp3') and os.path.getsize('public/voice.mp3') > 1000:
                       tts_ok = True
                       break
@@ -61,9 +67,8 @@ jobs:
               print('Using gTTS fallback...')
               gTTS(text=voice, lang='ru').save('public/voice.mp3')
 
-          # 2. Замеряем точную длину озвучки
           dur_sec = MP3('public/voice.mp3').info.length
-          duration_frames = max(150, int((dur_sec + 0.6) * 30))
+          duration_frames = max(150, int((dur_sec + 0.5) * 30))
 
           with open('props.json', 'w', encoding='utf-8') as f:
               json.dump({
@@ -84,6 +89,5 @@ jobs:
         run: |
           curl -F "chat_id=${TG_CHAT_ID}" \
                -F "video=@out/video.mp4" \
-               -F "caption=🎬 Ролик v3.0 готов! (Чистый вектор)" \
+               -F "caption=🎬 Новый ролик готов! (Master Engine v5.0)" \
                "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendVideo"
-               

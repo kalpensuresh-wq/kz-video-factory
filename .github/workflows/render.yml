@@ -19,33 +19,30 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies & Offline Male Voice (Piper)
+      - name: Install dependencies
         run: |
           npm install
-          pip install --upgrade edge-tts mutagen piper-tts
-          mkdir -p voices
-          curl -sL "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/dmitri/medium/ru_RU-dmitri-medium.onnx" -o voices/dmitri.onnx
-          curl -sL "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/dmitri/medium/ru_RU-dmitri-medium.onnx.json" -o voices/dmitri.onnx.json
 
-      - name: Synthesize Noir SFX & Generate STRICT Male TTS
+      - name: Synthesize Noir SFX & Generate Gemini Male Voiceover
         env:
           CONFIG_JSON: ${{ github.event.client_payload.config_json }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           mkdir -p public/sfx out
           python3 - << 'EOF'
-          import os, sys, json, time, math, wave, struct, random, asyncio, subprocess, edge_tts
-          from mutagen.mp3 import MP3
+          import os, sys, json, time, math, wave, struct, random, base64
+          import urllib.request, urllib.error
 
           # =====================================================================
-          # 1. CINEMATIC NOIR SFX & BGM SYNTHESIZER (v8.1)
+          # 1. CINEMATIC NOIR SFX & BGM SYNTHESIZER (v8.2)
           # =====================================================================
           SR = 44100
 
-          def write_wav(path, samples):
+          def write_wav(path, samples, sample_rate=SR):
               with wave.open(path, 'w') as wf:
                   wf.setnchannels(1)
                   wf.setsampwidth(2)
-                  wf.setframerate(SR)
+                  wf.setframerate(sample_rate)
                   buf = bytearray()
                   for s in samples:
                       val = max(-1.0, min(1.0, s))
@@ -148,36 +145,91 @@ jobs:
           sfx_files = ensure_sfx()
 
           # =====================================================================
-          # 2. STRICT MALE VOICE ONLY: edge-tts -> Offline Piper Male (Dmitri)
-          # Never uses female gTTS. Aborts if both male engines fail.
+          # 2. GEMINI TTS (STRICT STUDIO MALE VOICE — ABORTS ON FAILURE)
           # =====================================================================
-          def generate_male_audio(text, idx):
-              mp3_name = f'beat_{idx}.mp3'
-              mp3_path = f'public/{mp3_name}'
-              for attempt in range(2):
-                  try:
-                      asyncio.run(edge_tts.Communicate(text, 'ru-RU-DmitryNeural', rate='+12%').save(mp3_path))
-                      if os.path.exists(mp3_path) and os.path.getsize(mp3_path) > 1000:
-                          return mp3_name, MP3(mp3_path).info.length
-                  except Exception as e:
-                      print(f'edge-tts attempt {attempt+1}/2 failed:', e)
-                      time.sleep(1.5)
+          api_key = (os.environ.get('GEMINI_API_KEY') or '').strip()
+          if not api_key:
+              print('FATAL ERROR: GEMINI_API_KEY secret is missing or empty.')
+              sys.exit(1)
 
-              # Offline Male Fallback: Piper TTS (ru_RU-dmitri-medium)
-              print(f'Switching to OFFLINE Male Piper TTS (Dmitri) for beat {idx}...')
+          STYLE_DIRECTIONS = {
+              'danger': 'Прочитай естественно, напряжённым и слегка усталым мужским голосом, как ночная исповедь в 3 часа ночи. Темп живой, без лишних пауз:',
+              'tension': 'Прочитай тихим, сосредоточенным и тревожным мужским голосом, с ощущением нервного напряжения. Темп живой:',
+              'comeback': 'Прочитай спокойным, интригующим мужским голосом, как будто делишься секретом. Темп уверенный:',
+              'neutral': 'Прочитай живым, естественным разговорным мужским голосом, как честный рассказ другу ночью. Темп чуть выше среднего:',
+          }
+
+          TTS_MODELS = [
+              'gemini-2.5-flash-preview-tts',
+              'gemini-2.5-flash-tts',
+          ]
+
+          def gemini_tts(text, idx, tone='neutral', voice_name='Fenrir'):
               wav_name = f'beat_{idx}.wav'
               wav_path = f'public/{wav_name}'
-              proc = subprocess.run(
-                  ['piper', '--model', 'voices/dmitri.onnx', '--length_scale', '0.9', '--output_file', wav_path],
-                  input=text.encode('utf-8'),
-                  capture_output=True
-              )
-              if proc.returncode == 0 and os.path.exists(wav_path) and os.path.getsize(wav_path) > 1000:
-                  with wave.open(wav_path, 'rb') as wf:
-                      dur = wf.getnframes() / float(wf.getframerate())
-                  return wav_name, dur
+              direction = STYLE_DIRECTIONS.get(tone, STYLE_DIRECTIONS['neutral'])
+              prompt_text = f'{direction} "{text}"'
 
-              print('FATAL ERROR: Both male TTS engines failed:', proc.stderr.decode('utf-8', errors='ignore'))
+              payload = json.dumps({
+                  'contents': [{'parts': [{'text': prompt_text}]}],
+                  'generationConfig': {
+                      'responseModalities': ['AUDIO'],
+                      'speechConfig': {
+                          'voiceConfig': {
+                              'prebuiltVoiceConfig': {
+                                  'voiceName': voice_name
+                              }
+                          }
+                      }
+                  }
+              }).encode('utf-8')
+
+              last_err = ''
+              for model in TTS_MODELS:
+                  url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
+                  for attempt in range(4):
+                      req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+                      try:
+                          with urllib.request.urlopen(req, timeout=60) as resp:
+                              data = json.loads(resp.read().decode('utf-8'))
+                          parts = data.get('candidates', [{}])[0].get('content', {}).get('parts', [])
+                          inline = next((p.get('inlineData') for p in parts if 'inlineData' in p), None)
+                          if not inline or not inline.get('data'):
+                              raise ValueError(f'No audio inlineData returned: {str(data)[:250]}')
+
+                          pcm_bytes = base64.b64decode(inline['data'])
+                          if len(pcm_bytes) < 2000:
+                              raise ValueError(f'Audio too short ({len(pcm_bytes)} bytes)')
+
+                          # Gemini TTS returns 24kHz 16-bit mono PCM (audio/L16)
+                          with wave.open(wav_path, 'wb') as wf:
+                              wf.setnchannels(1)
+                              wf.setsampwidth(2)
+                              wf.setframerate(24000)
+                              wf.writeframes(pcm_bytes)
+
+                          dur_sec = len(pcm_bytes) / float(2 * 24000)
+                          print(f'Beat {idx} OK via {model} ({voice_name}): {dur_sec:.2f}s')
+                          return wav_name, dur_sec
+
+                      except urllib.error.HTTPError as e:
+                          body = e.read().decode('utf-8', errors='ignore')
+                          last_err = f'{model} HTTP {e.code}: {body[:300]}'
+                          print(f'Attempt {attempt+1}/4 failed -> {last_err}')
+                          if e.code == 404:
+                              break
+                          if e.code == 429:
+                              wait_s = 6 * (attempt + 1)
+                              print(f'Rate limited (429), sleeping {wait_s}s...')
+                              time.sleep(wait_s)
+                          else:
+                              time.sleep(3)
+                      except Exception as e:
+                          last_err = f'{model} error: {e}'
+                          print(f'Attempt {attempt+1}/4 failed -> {last_err}')
+                          time.sleep(3)
+
+              print(f'FATAL ERROR: Gemini TTS failed for beat {idx}. Aborting render so no bad video is sent. Last error: {last_err}')
               sys.exit(1)
 
           cfg_raw = os.environ.get('CONFIG_JSON') or '{}'
@@ -188,17 +240,20 @@ jobs:
               print('FATAL ERROR: No beats found in CONFIG_JSON.')
               sys.exit(1)
 
+          voice_name = cfg.get('voiceName') or 'Fenrir'
           FPS = 30
           GAP_FRAMES = 4
           cursor = 0
 
           for idx, beat in enumerate(beats):
-              fname, dur_sec = generate_male_audio(beat.get('ru', ''), idx)
+              fname, dur_sec = gemini_tts(beat.get('ru', ''), idx, tone=beat.get('tone', 'neutral'), voice_name=voice_name)
               dur_frames = max(36, int(math.ceil(dur_sec * FPS)) + GAP_FRAMES)
               beat['audioFile'] = fname
               beat['fromFrame'] = cursor
               beat['durationInFrames'] = dur_frames
               cursor += dur_frames
+              if idx < len(beats) - 1:
+                  time.sleep(2.0)
 
           total_frames = max(150, cursor + 12)
 
@@ -220,5 +275,5 @@ jobs:
         run: |
           curl -F "chat_id=${TG_CHAT_ID}" \
                -F "video=@out/video.mp4" \
-               -F "caption=🎬 Дневник лудомана (Master Engine v8.1 • Мужской голос + Нуар + Живой экран)" \
+               -F "caption=🎬 Дневник лудомана (Master Engine v8.2 • Gemini AI Голос + Нуар + Живой экран)" \
                "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendVideo"

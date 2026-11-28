@@ -19,10 +19,13 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Install dependencies & Offline Male Voice (Piper)
         run: |
           npm install
-          pip install --upgrade edge-tts mutagen
+          pip install --upgrade edge-tts mutagen piper-tts
+          mkdir -p voices
+          curl -sL "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/dmitri/medium/ru_RU-dmitri-medium.onnx" -o voices/dmitri.onnx
+          curl -sL "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/dmitri/medium/ru_RU-dmitri-medium.onnx.json" -o voices/dmitri.onnx.json
 
       - name: Synthesize Noir SFX & Generate STRICT Male TTS
         env:
@@ -30,11 +33,11 @@ jobs:
         run: |
           mkdir -p public/sfx out
           python3 - << 'EOF'
-          import os, sys, json, time, math, wave, struct, random, asyncio, edge_tts
+          import os, sys, json, time, math, wave, struct, random, asyncio, subprocess, edge_tts
           from mutagen.mp3 import MP3
 
           # =====================================================================
-          # 1. CINEMATIC NOIR SFX & BGM SYNTHESIZER (v8.0)
+          # 1. CINEMATIC NOIR SFX & BGM SYNTHESIZER (v8.1)
           # =====================================================================
           SR = 44100
 
@@ -145,18 +148,36 @@ jobs:
           sfx_files = ensure_sfx()
 
           # =====================================================================
-          # 2. STRICT MALE VOICE ONLY (NO gTTS FALLBACK — ABORT ON FAILURE)
+          # 2. STRICT MALE VOICE ONLY: edge-tts -> Offline Piper Male (Dmitri)
+          # Never uses female gTTS. Aborts if both male engines fail.
           # =====================================================================
-          def strict_male_tts(text, out_path, voice='ru-RU-DmitryNeural', rate='+12%', pitch='-4Hz'):
-              for attempt in range(4):
+          def generate_male_audio(text, idx):
+              mp3_name = f'beat_{idx}.mp3'
+              mp3_path = f'public/{mp3_name}'
+              for attempt in range(2):
                   try:
-                      asyncio.run(edge_tts.Communicate(text, voice, rate=rate, pitch=pitch).save(out_path))
-                      if os.path.exists(out_path) and os.path.getsize(out_path) > 1000:
-                          return
+                      asyncio.run(edge_tts.Communicate(text, 'ru-RU-DmitryNeural', rate='+12%').save(mp3_path))
+                      if os.path.exists(mp3_path) and os.path.getsize(mp3_path) > 1000:
+                          return mp3_name, MP3(mp3_path).info.length
                   except Exception as e:
-                      print(f'edge-tts attempt {attempt+1}/4 failed:', e)
-                      time.sleep(2.5)
-              print('FATAL ERROR: Male voice (edge-tts) failed after 4 attempts. Aborting render so no bad video is sent.')
+                      print(f'edge-tts attempt {attempt+1}/2 failed:', e)
+                      time.sleep(1.5)
+
+              # Offline Male Fallback: Piper TTS (ru_RU-dmitri-medium)
+              print(f'Switching to OFFLINE Male Piper TTS (Dmitri) for beat {idx}...')
+              wav_name = f'beat_{idx}.wav'
+              wav_path = f'public/{wav_name}'
+              proc = subprocess.run(
+                  ['piper', '--model', 'voices/dmitri.onnx', '--length_scale', '0.9', '--output_file', wav_path],
+                  input=text.encode('utf-8'),
+                  capture_output=True
+              )
+              if proc.returncode == 0 and os.path.exists(wav_path) and os.path.getsize(wav_path) > 1000:
+                  with wave.open(wav_path, 'rb') as wf:
+                      dur = wf.getnframes() / float(wf.getframerate())
+                  return wav_name, dur
+
+              print('FATAL ERROR: Both male TTS engines failed:', proc.stderr.decode('utf-8', errors='ignore'))
               sys.exit(1)
 
           cfg_raw = os.environ.get('CONFIG_JSON') or '{}'
@@ -172,10 +193,7 @@ jobs:
           cursor = 0
 
           for idx, beat in enumerate(beats):
-              fname = f'beat_{idx}.mp3'
-              fpath = f'public/{fname}'
-              strict_male_tts(beat.get('ru', ''), fpath)
-              dur_sec = MP3(fpath).info.length
+              fname, dur_sec = generate_male_audio(beat.get('ru', ''), idx)
               dur_frames = max(36, int(math.ceil(dur_sec * FPS)) + GAP_FRAMES)
               beat['audioFile'] = fname
               beat['fromFrame'] = cursor
@@ -202,5 +220,5 @@ jobs:
         run: |
           curl -F "chat_id=${TG_CHAT_ID}" \
                -F "video=@out/video.mp4" \
-               -F "caption=🎬 Дневник лудомана (Master Engine v8.0 • Нуар + Живой экран)" \
+               -F "caption=🎬 Дневник лудомана (Master Engine v8.1 • Мужской голос + Нуар + Живой экран)" \
                "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendVideo"

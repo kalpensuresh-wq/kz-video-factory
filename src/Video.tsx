@@ -14,13 +14,19 @@ import {
 } from 'remotion';
 
 // ============================================================================
-// TYPES & INTERFACES — MASTER ENGINE v6.0
+// TYPES & INTERFACES — MASTER ENGINE v7.0 (CINEMATIC STORYTELLING EDITION)
 // ============================================================================
 
-export type LocationName = 'kok_tobe_almaty' | 'baiterek_astana' | 'chayhana' | 'night_city';
-export type CharacterMood = 'neutral' | 'sad' | 'thinking' | 'shock' | 'happy' | 'confident';
+export type LocationName =
+  | 'night_car'
+  | 'dark_kitchen'
+  | 'night_shop'
+  | 'kok_tobe_almaty';
+
+export type CharacterMood = 'neutral' | 'sad' | 'stress' | 'shock' | 'thinking' | 'happy' | 'confident';
 export type CharacterRole = 'young' | 'elder' | 'woman' | 'driver';
-export type SfxType = 'pop' | 'whoosh' | 'coin' | 'win';
+export type SfxType = 'boom' | 'sms' | 'heartbeat' | 'whoosh' | 'pop' | 'coin' | 'win';
+export type VfxType = 'none' | 'danger' | 'comeback' | 'flash';
 
 export interface CharacterConfig {
   name?: string;
@@ -29,60 +35,36 @@ export interface CharacterConfig {
   hairColor?: string;
   glasses?: boolean;
   beard?: boolean;
-  ornament?: boolean;
   holdingPhone?: boolean;
   voice?: string;
   rate?: string;
   pitch?: string;
 }
 
-export interface WidgetConfig {
-  type: 'versus' | 'rng' | 'rtp' | 'mini_slot' | 'push' | 'promo';
-  title?: string;
+export interface OverlayConfig {
+  type: 'sms' | 'bank_alert' | 'balance_drop' | 'versus' | 'cliffhanger';
+  // sms
+  sender?: string;
+  message?: string;
+  time?: string;
+  // bank_alert
+  bankTitle?: string;
+  amount?: string;
+  subText?: string;
+  isError?: boolean;
+  // balance_drop
+  label?: string;
+  fromAmount?: number;
+  toAmount?: number;
   // versus
+  title?: string;
   leftLabel?: string;
   leftValue?: string;
   rightLabel?: string;
   rightValue?: string;
-  // rng
-  myths?: string[];
+  // cliffhanger
   badge?: string;
-  // rtp
-  percent?: number;
-  leftSplit?: string;
-  rightSplit?: string;
-  // mini_slot
-  bet?: string;
-  multiplier?: string;
-  winText?: string;
-  // push
-  bankTitle?: string;
-  amount?: string;
-  subText?: string;
-  // promo
-  code?: string;
-  bonus?: string;
   cta?: string;
-}
-
-export interface CutawayConfig {
-  type: 'slot_spin' | 'crash_flight' | 'money_rain' | 'phone_statement';
-  title?: string;
-  betAmount?: string;
-  winMultiplier?: string;
-  winBanner?: string;
-  from?: number;
-  to?: number;
-  earlyExitLabel?: string;
-  startAmount?: number;
-  winAmount?: number;
-  pushes?: Array<{ title: string; value: string; accent?: 'green' | 'gold' }>;
-  headerTitle?: string;
-  headerAmount?: string;
-  headerSub?: string;
-  rows?: Array<{ title: string; sub: string; amount: string; positive?: boolean }>;
-  totalLabel?: string;
-  totalAmount?: string;
 }
 
 export interface DialogueLine {
@@ -92,10 +74,11 @@ export interface DialogueLine {
   mood?: CharacterMood;
   otherMood?: CharacterMood;
   reaction?: string;
-  widget?: WidgetConfig;
-  cutaway?: CutawayConfig;
+  overlay?: OverlayConfig;
   sfx?: SfxType;
-  // Populated automatically by render.yml
+  vfx?: VfxType;
+  zoomToFace?: boolean;
+  // Auto-populated by render.yml
   audioFile?: string;
   fromFrame?: number;
   durationInFrames?: number;
@@ -104,13 +87,14 @@ export interface DialogueLine {
 export interface VideoProps {
   config: {
     id: number;
+    seriesTitle?: string; // e.g. "ДНЕВНИК ЛУДОМАНА • ДЕНЬ 1"
+    timestamp?: string;   // e.g. "03:14 • АЛМАТЫ"
     location?: LocationName | string;
     singleCharacter?: boolean;
     characters?: {
       left?: CharacterConfig;
       right?: CharacterConfig;
     };
-    sticker?: { code: string; label: string; showAtSec?: number };
     dialogue?: DialogueLine[];
     bgmVolume?: number;
   };
@@ -121,244 +105,172 @@ export interface VideoProps {
 }
 
 // ============================================================================
-// KAZAKHSTAN LOCATIONS (RICH VECTOR BACKGROUNDS)
+// CINEMATIC ATMOSPHERIC LOCATIONS (WITH LIGHTING & WEATHER)
 // ============================================================================
 
-const KazakhOrnamentFrame: React.FC = () => (
-  <svg width="1080" height="1920" viewBox="0 0 1080 1920" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-    <rect
-      x="22"
-      y="22"
-      width="1036"
-      height="1876"
-      rx="26"
-      fill="none"
-      stroke="rgba(250, 204, 21, 0.28)"
-      strokeWidth="2.5"
-    />
-    {/* Subtle corner ornament accents */}
-    {[
-      'translate(36, 36)',
-      'translate(1044, 36) scale(-1, 1)',
-      'translate(36, 1884) scale(1, -1)',
-      'translate(1044, 1884) scale(-1, -1)',
-    ].map((tr, i) => (
-      <g key={i} transform={tr} opacity="0.55">
-        <path
-          d="M 0 54 L 0 12 Q 0 0 12 0 L 54 0 M 14 34 Q 14 14 34 14"
-          fill="none"
-          stroke="#FACC15"
-          strokeWidth="3.5"
-          strokeLinecap="round"
-        />
-        <circle cx="14" cy="14" r="3.5" fill="#FACC15" />
-      </g>
-    ))}
-  </svg>
-);
-
-const LocationBackground: React.FC<{ location?: string }> = ({ location }) => {
+const LocationBackdrop: React.FC<{ location?: string }> = ({ location }) => {
   const frame = useCurrentFrame();
-  const blink = Math.sin(frame / 10) > 0;
   const twinkle = (seed: number) => 0.45 + 0.55 * Math.sin(frame / 14 + seed);
 
-  if (location === 'baiterek_astana') {
+  // 1. NIGHT CAR (3 AM inside car, glowing dashboard, rain on windshield, city bokeh)
+  if (location === 'night_car') {
     return (
-      <AbsoluteFill style={{ background: 'linear-gradient(180deg, #071226 0%, #0F2547 52%, #1E293B 78%, #090D16 100%)' }}>
+      <AbsoluteFill style={{ background: 'linear-gradient(180deg, #050814 0%, #0D172E 42%, #070B14 100%)' }}>
         <svg width="1080" height="1920" viewBox="0 0 1080 1920" style={{ position: 'absolute', inset: 0 }}>
-          {/* Stars */}
-          {Array.from({ length: 28 }).map((_, i) => (
-            <circle
-              key={i}
-              cx={(i * 173) % 1040 + 20}
-              cy={(i * 89) % 520 + 40}
-              r={i % 3 === 0 ? 3 : 2}
-              fill="#F8FAFC"
-              opacity={twinkle(i)}
-            />
-          ))}
-          {/* Astana Modern Towers */}
-          <rect x="60" y="920" width="110" height="520" fill="#0B1930" />
-          <rect x="200" y="840" width="130" height="600" fill="#0E203D" />
-          <rect x="740" y="870" width="125" height="570" fill="#0E203D" />
-          <rect x="895" y="940" width="115" height="500" fill="#0B1930" />
-          {/* Window lights */}
-          {Array.from({ length: 36 }).map((_, i) => (
-            <rect
-              key={i}
-              x={i % 2 === 0 ? 85 + (i % 4) * 24 : 760 + (i % 4) * 24}
-              y={950 + Math.floor(i / 4) * 42}
-              width="12"
-              height="16"
-              rx="2"
-              fill={i % 5 === 0 ? '#FACC15' : '#38BDF8'}
-              opacity={0.35 + (i % 3) * 0.2}
-            />
-          ))}
-          {/* Baiterek Monument Center */}
-          <g transform="translate(540, 820)">
-            {/* Golden sphere glow */}
-            <circle cx="0" cy="-140" r="108" fill="rgba(250, 204, 21, 0.16)" />
-            {/* White lattice tower */}
-            <path d="M -52 540 L -24 -75 L 24 -75 L 52 540 Z" fill="none" stroke="#E2E8F0" strokeWidth="7" opacity="0.85" />
-            <path d="M -68 -140 L -24 -75 M 68 -140 L 24 -75 M -42 -150 L -12 -75 M 42 -150 L 12 -75" stroke="#F8FAFC" strokeWidth="5" />
-            <line x1="-38" y1="150" x2="38" y2="150" stroke="#94A3B8" strokeWidth="3" />
-            <line x1="-44" y1="300" x2="44" y2="300" stroke="#94A3B8" strokeWidth="3" />
-            {/* Golden Sphere */}
-            <defs>
-              <radialGradient id="baiterekGold" cx="35%" cy="35%" r="65%">
-                <stop offset="0%" stopColor="#FEF08A" />
-                <stop offset="55%" stopColor="#F59E0B" />
-                <stop offset="100%" stopColor="#B45309" />
-              </radialGradient>
-            </defs>
-            <circle cx="0" cy="-140" r="64" fill="url(#baiterekGold)" stroke="#FEF08A" strokeWidth="3" />
-          </g>
-          {/* Dark foreground promenade */}
-          <rect x="0" y="1390" width="1080" height="530" fill="#090D16" />
-          <line x1="0" y1="1390" x2="1080" y2="1390" stroke="#38BDF8" strokeWidth="4" opacity="0.45" />
-        </svg>
-      </AbsoluteFill>
-    );
-  }
-
-  if (location === 'chayhana') {
-    return (
-      <AbsoluteFill style={{ background: 'linear-gradient(180deg, #1F120D 0%, #361C12 52%, #1A0E0A 80%, #0D0705 100%)' }}>
-        <svg width="1080" height="1920" viewBox="0 0 1080 1920" style={{ position: 'absolute', inset: 0 }}>
-          {/* Warm wooden oriental arch */}
-          <path d="M 40 1420 L 40 420 Q 540 120 1040 420 L 1040 1420" fill="none" stroke="#78350F" strokeWidth="26" opacity="0.7" />
-          <path d="M 85 1420 L 85 455 Q 540 185 995 455 L 995 1420" fill="none" stroke="#D97706" strokeWidth="4" opacity="0.4" />
-          {/* Warm hanging lanterns */}
-          {[220, 540, 860].map((lx, i) => {
-            const sway = Math.sin(frame / 22 + i * 2) * 6;
-            const ly = i === 1 ? 310 : 380;
+          {/* Blurred night city bokeh outside windshield */}
+          {Array.from({ length: 22 }).map((_, i) => {
+            const bx = ((i * 157 + frame * (0.4 + (i % 3) * 0.2)) % 1160) - 40;
+            const by = 260 + (i * 73) % 520;
+            const colors = ['#F59E0B', '#EF4444', '#38BDF8', '#FACC15'];
             return (
-              <g key={i} transform={`translate(${lx + sway}, ${ly})`}>
-                <line x1="0" y1="-380" x2="0" y2="0" stroke="#92400E" strokeWidth="4" />
-                <circle cx="0" cy="42" r="95" fill="rgba(251, 191, 36, 0.16)" />
-                <ellipse cx="0" cy="42" rx="34" ry="44" fill="#F59E0B" stroke="#78350F" strokeWidth="4" />
-                <ellipse cx="0" cy="42" rx="18" ry="30" fill="#FEF08A" opacity="0.85" />
-              </g>
+              <circle
+                key={i}
+                cx={bx}
+                cy={by}
+                r={18 + (i % 4) * 14}
+                fill={colors[i % colors.length]}
+                opacity={0.14 + 0.08 * twinkle(i)}
+              />
             );
           })}
-          {/* Warm bokeh */}
-          {Array.from({ length: 18 }).map((_, i) => (
-            <circle
-              key={i}
-              cx={(i * 197) % 1000 + 40}
-              cy={560 + (i * 93) % 700}
-              r={12 + (i % 4) * 8}
-              fill="#FBBF24"
-              opacity={0.07 + 0.06 * twinkle(i)}
-            />
-          ))}
-          {/* Dark terrace floor */}
-          <rect x="0" y="1390" width="1080" height="530" fill="#120906" />
-          <line x1="0" y1="1390" x2="1080" y2="1390" stroke="#D97706" strokeWidth="4" opacity="0.5" />
+
+          {/* Raindrops streaking down windshield */}
+          {Array.from({ length: 34 }).map((_, i) => {
+            const rx = (i * 97) % 1060 + 10;
+            const ry = ((frame * (16 + (i % 5) * 4) + i * 130) % 1100) + 80;
+            return (
+              <line
+                key={i}
+                x1={rx}
+                y1={ry}
+                x2={rx - 6}
+                y2={ry + 36}
+                stroke="rgba(186, 230, 253, 0.32)"
+                strokeWidth={i % 3 === 0 ? 3 : 1.8}
+                strokeLinecap="round"
+              />
+            );
+          })}
+
+          {/* Car roof / windshield pillars */}
+          <path d="M 0 0 L 1080 0 L 1080 260 Q 540 205 0 260 Z" fill="#060911" />
+          <path d="M 0 220 L 95 250 L 45 1040 L 0 1040 Z" fill="#080C16" />
+          <path d="M 1080 220 L 985 250 L 1035 1040 L 1080 1040 Z" fill="#080C16" />
+
+          {/* Rear-view mirror */}
+          <rect x="420" y="218" width="240" height="58" rx="14" fill="#0F172A" stroke="#1E293B" strokeWidth="4" />
+
+          {/* Dashboard silhouette & subtle neon glow */}
+          <path d="M 0 1120 Q 540 1040 1080 1120 L 1080 1920 L 0 1920 Z" fill="#070B14" />
+          <path d="M 0 1120 Q 540 1040 1080 1120" fill="none" stroke="rgba(56, 189, 248, 0.35)" strokeWidth="4" />
+
+          {/* Glowing speedometer dials on lower-left */}
+          <g transform="translate(210, 1210)" opacity="0.55">
+            <circle cx="0" cy="0" r="62" fill="none" stroke="#38BDF8" strokeWidth="4" strokeDasharray="12 6" />
+            <circle cx="135" cy="0" r="62" fill="none" stroke="#EF4444" strokeWidth="4" strokeDasharray="10 8" />
+          </g>
         </svg>
       </AbsoluteFill>
     );
   }
 
-  if (location === 'night_city') {
+  // 2. DARK KITCHEN (Dimly lit apartment at 3 AM, glowing clock, warm lamp)
+  if (location === 'dark_kitchen') {
+    const colonOn = Math.floor(frame / 15) % 2 === 0;
     return (
-      <AbsoluteFill style={{ background: 'linear-gradient(180deg, #080C18 0%, #151C36 55%, #090D16 100%)' }}>
+      <AbsoluteFill style={{ background: 'linear-gradient(180deg, #0D0B12 0%, #1C1624 52%, #09080D 100%)' }}>
         <svg width="1080" height="1920" viewBox="0 0 1080 1920" style={{ position: 'absolute', inset: 0 }}>
-          {Array.from({ length: 24 }).map((_, i) => (
-            <circle
-              key={i}
-              cx={(i * 181) % 1020 + 30}
-              cy={420 + (i * 127) % 850}
-              r={18 + (i % 5) * 14}
-              fill={i % 2 === 0 ? '#38BDF8' : '#FACC15'}
-              opacity={0.08 + 0.06 * twinkle(i)}
-            />
+          {/* Night window on left */}
+          <rect x="75" y="290" width="290" height="440" rx="14" fill="#071022" stroke="#1E293B" strokeWidth="10" />
+          <line x1="220" y1="290" x2="220" y2="730" stroke="#1E293B" strokeWidth="8" />
+          <line x1="75" y1="510" x2="365" y2="510" stroke="#1E293B" strokeWidth="8" />
+          {/* Moon & distant lights in window */}
+          <circle cx="150" cy="375" r="24" fill="#FEF08A" opacity="0.75" />
+          {Array.from({ length: 8 }).map((_, i) => (
+            <rect key={i} x={100 + (i % 4) * 60} y={620 + Math.floor(i / 4) * 40} width="16" height="22" fill="#F59E0B" opacity={0.35 + 0.25 * twinkle(i)} />
           ))}
-          <rect x="0" y="1390" width="1080" height="530" fill="#070A12" />
-          <line x1="0" y1="1390" x2="1080" y2="1390" stroke="#6366F1" strokeWidth="4" opacity="0.5" />
+
+          {/* Warm overhead pendant lamp */}
+          <line x1="540" y1="0" x2="540" y2="255" stroke="#334155" strokeWidth="6" />
+          <path d="M 465 255 L 615 255 L 580 215 L 500 215 Z" fill="#1E293B" />
+          <polygon points="465,255 615,255 920,1260 160,1260" fill="url(#warmLampCone)" opacity="0.22" />
+          <defs>
+            <linearGradient id="warmLampCone" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#FBBF24" />
+              <stop offset="100%" stopColor="transparent" />
+            </linearGradient>
+          </defs>
+
+          {/* Digital Red Wall Clock */}
+          <g transform="translate(690, 340)">
+            <rect x="0" y="0" width="240" height="104" rx="16" fill="#090D16" stroke="#334155" strokeWidth="5" />
+            <text x="120" y="72" textAnchor="middle" fill="#EF4444" fontSize="62" fontWeight="900" fontFamily="monospace">
+              03{colonOn ? ':' : ' '}14
+            </text>
+          </g>
+
+          {/* Dark kitchen table foreground */}
+          <rect x="0" y="1230" width="1080" height="690" fill="#0B090E" />
+          <line x1="0" y1="1230" x2="1080" y2="1230" stroke="rgba(251, 191, 36, 0.28)" strokeWidth="4" />
         </svg>
       </AbsoluteFill>
     );
   }
 
-  // Default: kok_tobe_almaty — Iconic Almaty night terrace, mountains & Kok-Tobe TV tower
+  // 3. NIGHT SHOP 24/7 (Neon store sign, streetlamp glow, falling rain)
+  if (location === 'night_shop') {
+    const flicker = frame % 85 === 0 || frame % 87 === 0 ? 0.45 : 1;
+    return (
+      <AbsoluteFill style={{ background: 'linear-gradient(180deg, #070B16 0%, #111827 55%, #060910 100%)' }}>
+        <svg width="1080" height="1920" viewBox="0 0 1080 1920" style={{ position: 'absolute', inset: 0 }}>
+          {/* Shop facade */}
+          <rect x="65" y="340" width="950" height="840" rx="18" fill="#0F172A" stroke="#1E293B" strokeWidth="6" />
+          {/* Glowing shop window */}
+          <rect x="125" y="540" width="520" height="460" rx="12" fill="rgba(254, 240, 138, 0.14)" stroke="#334155" strokeWidth="6" />
+          {/* Neon 24/7 Sign */}
+          <g transform="translate(700, 390)" opacity={flicker}>
+            <rect x="0" y="0" width="250" height="110" rx="18" fill="#090D16" stroke="#38BDF8" strokeWidth="5" />
+            <text x="125" y="74" textAnchor="middle" fill="#38BDF8" fontSize="64" fontWeight="900" fontFamily="sans-serif">
+              24/7
+            </text>
+          </g>
+          {/* Warm streetlamp halo */}
+          <circle cx="160" cy="240" r="190" fill="rgba(251, 191, 36, 0.15)" />
+          <circle cx="160" cy="240" r="22" fill="#FEF08A" />
+
+          {/* Falling rain */}
+          {Array.from({ length: 30 }).map((_, i) => {
+            const rx = (i * 103) % 1060 + 10;
+            const ry = ((frame * (18 + (i % 4) * 3) + i * 145) % 1300) + 40;
+            return (
+              <line key={i} x1={rx} y1={ry} x2={rx - 5} y2={ry + 32} stroke="rgba(148, 163, 184, 0.35)" strokeWidth="2" />
+            );
+          })}
+
+          {/* Wet dark pavement */}
+          <rect x="0" y="1210" width="1080" height="710" fill="#070A12" />
+          <line x1="0" y1="1210" x2="1080" y2="1210" stroke="rgba(56, 189, 248, 0.3)" strokeWidth="4" />
+        </svg>
+      </AbsoluteFill>
+    );
+  }
+
+  // Fallback: kok_tobe_almaty
   return (
-    <AbsoluteFill style={{ background: 'linear-gradient(180deg, #070B19 0%, #111D3B 46%, #1D2C4D 72%, #0A0E17 100%)' }}>
+    <AbsoluteFill style={{ background: 'linear-gradient(180deg, #070B19 0%, #111D3B 46%, #1D2C4D 72%, #080B14 100%)' }}>
       <svg width="1080" height="1920" viewBox="0 0 1080 1920" style={{ position: 'absolute', inset: 0 }}>
-        {/* Night stars */}
-        {Array.from({ length: 30 }).map((_, i) => (
-          <circle
-            key={i}
-            cx={(i * 167) % 1020 + 30}
-            cy={(i * 79) % 520 + 50}
-            r={i % 4 === 0 ? 3.2 : 1.8}
-            fill="#F8FAFC"
-            opacity={twinkle(i)}
-          />
+        {Array.from({ length: 28 }).map((_, i) => (
+          <circle key={i} cx={(i * 167) % 1020 + 30} cy={(i * 79) % 480 + 50} r={2.2} fill="#F8FAFC" opacity={twinkle(i)} />
         ))}
-
-        {/* Zailiyskiy Alatau Mountains Silhouette */}
-        <path
-          d="M 0 1240 L 160 1020 L 340 1140 L 540 940 L 760 1120 L 940 990 L 1080 1160 L 1080 1420 L 0 1420 Z"
-          fill="#0F1B33"
-        />
-        <path
-          d="M 0 1320 L 210 1150 L 440 1240 L 680 1110 L 890 1210 L 1080 1130 L 1080 1420 L 0 1420 Z"
-          fill="#0B1326"
-        />
-
-        {/* Kok-Tobe TV Tower (right-center skyline) */}
-        <g transform="translate(835, 760)">
-          {/* Spire */}
-          <line x1="0" y1="-210" x2="0" y2="390" stroke="#CBD5E1" strokeWidth="7" opacity="0.7" />
-          {/* Tower observation decks */}
-          <rect x="-24" y="-50" width="48" height="22" rx="6" fill="#334155" stroke="#94A3B8" strokeWidth="2" />
-          <rect x="-18" y="-110" width="36" height="18" rx="5" fill="#334155" stroke="#94A3B8" strokeWidth="2" />
-          {/* Illuminated vertical light strip */}
-          <line x1="0" y1="-100" x2="0" y2="340" stroke="#38BDF8" strokeWidth="3" opacity="0.75" />
-          {/* Blinking red aircraft warning beacon */}
-          <circle cx="0" cy="-214" r={blink ? 11 : 6} fill="#EF4444" opacity={blink ? 0.95 : 0.4} />
-          {blink && <circle cx="0" cy="-214" r="26" fill="rgba(239, 68, 68, 0.28)" />}
-        </g>
-
-        {/* Distant Almaty city lights carpet */}
-        {Array.from({ length: 48 }).map((_, i) => (
-          <circle
-            key={i}
-            cx={(i * 73) % 1040 + 20}
-            cy={1265 + (i * 29) % 115}
-            r={2.5 + (i % 3)}
-            fill={i % 3 === 0 ? '#FACC15' : i % 3 === 1 ? '#FB923C' : '#38BDF8'}
-            opacity={0.4 + 0.4 * twinkle(i)}
-          />
-        ))}
-
-        {/* Warm terrace fairy lights string across upper-mid */}
-        <path d="M 0 770 Q 540 855 1080 765" fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="2.5" />
-        {Array.from({ length: 11 }).map((_, i) => {
-          const u = i / 10;
-          const bx = u * 1080;
-          const by = 770 + Math.sin(Math.PI * u) * 44;
-          return (
-            <g key={i}>
-              <circle cx={bx} cy={by} r="18" fill="rgba(250, 204, 21, 0.2)" opacity={twinkle(i * 2)} />
-              <circle cx={bx} cy={by} r="5.5" fill="#FEF08A" />
-            </g>
-          );
-        })}
-
-        {/* Terrace Railing & Dark Floor (clean subtitle backdrop) */}
-        <rect x="0" y="1365" width="1080" height="14" fill="#1E293B" />
-        <rect x="0" y="1379" width="1080" height="541" fill="#080B14" />
-        <line x1="0" y1="1365" x2="1080" y2="1365" stroke="rgba(250, 204, 21, 0.35)" strokeWidth="3" />
+        <path d="M 0 1160 L 180 940 L 390 1080 L 580 880 L 820 1060 L 1080 940 L 1080 1280 L 0 1280 Z" fill="#0E1A32" />
+        <rect x="0" y="1240" width="1080" height="680" fill="#070A12" />
       </svg>
     </AbsoluteFill>
   );
 };
 
 // ============================================================================
-// FLEXIBLE CHARACTER CONSTRUCTOR WITH LIP-SYNC
+// UPGRADED CHARACTER ACTOR (SHADING, PHONE RIM-LIGHT, SWEAT, LIP-SYNC)
 // ============================================================================
 
 const CharacterActor: React.FC<{
@@ -376,44 +288,40 @@ const CharacterActor: React.FC<{
   const outfit =
     char.outfitColor ||
     (role === 'elder' ? '#1E3A8A' : role === 'woman' ? '#BE185D' : role === 'driver' ? '#334155' : '#0F766E');
-  const hair = char.hairColor || (role === 'elder' ? '#64748B' : '#1E293B');
+  const hair = char.hairColor || (role === 'elder' ? '#64748B' : '#111827');
   const hasGlasses = char.glasses ?? role === 'elder';
   const hasBeard = char.beard ?? role === 'elder';
-  const hasOrnament = char.ornament ?? role === 'elder';
 
-  // Alive motion: breathing, blinking, speaking head bob & lip-sync
-  const breathe = Math.sin(frame / 12) * 3.5;
-  const speakBob = isSpeaking ? Math.sin(frame / 4.2) * 4.5 : 0;
-  const blink = (frame + (facing === 'left' ? 0 : 37)) % 105 > 100;
-
-  // Dynamic lip-sync mouth openness (0 to 1)
+  const breathe = Math.sin(frame / 11) * 4;
+  const speakBob = isSpeaking ? Math.sin(frame / 4) * 5 : 0;
+  const blink = (frame + (facing === 'left' ? 0 : 41)) % 98 > 93;
   const mouthOpen = isSpeaking
-    ? Math.max(0.15, Math.abs(Math.sin(frame * 0.55) * 0.65 + Math.sin(frame * 0.92) * 0.35))
+    ? Math.max(0.16, Math.abs(Math.sin(frame * 0.56) * 0.65 + Math.sin(frame * 0.94) * 0.35))
     : 0;
 
-  const gestureLift = isSpeaking ? Math.sin(frame / 6) * 16 : 0;
+  const sweatY = (frame * 1.4) % 28;
   const reactPop = reaction ? spring({ frame: Math.max(0, frame - 4), fps, config: { damping: 11 } }) : 0;
   const flipX = facing === 'left' ? -1 : 1;
+  const phoneGlow = mood === 'happy' || mood === 'confident' ? 'rgba(250, 204, 21, 0.25)' : 'rgba(56, 189, 248, 0.28)';
 
   return (
     <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      {/* Optional Reaction Pill */}
       {reaction && (
         <div
           style={{
             position: 'absolute',
-            top: -58,
+            top: -64,
             transform: `scale(${reactPop})`,
-            background: mood === 'shock' ? '#FACC15' : mood === 'sad' ? '#EF4444' : '#4ADE80',
-            color: mood === 'sad' ? '#FFFFFF' : '#0F172A',
+            background: mood === 'stress' || mood === 'sad' ? '#EF4444' : mood === 'shock' ? '#FACC15' : '#4ADE80',
+            color: mood === 'stress' || mood === 'sad' ? '#FFFFFF' : '#0F172A',
             border: '3px solid #0F172A',
             borderRadius: 999,
-            padding: '8px 22px',
-            fontSize: 26,
+            padding: '8px 24px',
+            fontSize: 28,
             fontWeight: 900,
             whiteSpace: 'nowrap',
             zIndex: 5,
-            boxShadow: '0 6px 18px rgba(0,0,0,0.45)',
+            boxShadow: '0 8px 22px rgba(0,0,0,0.5)',
           }}
         >
           {reaction}
@@ -421,158 +329,131 @@ const CharacterActor: React.FC<{
       )}
 
       <svg
-        width={380 * scale}
-        height={490 * scale}
+        width={400 * scale}
+        height={500 * scale}
         viewBox="0 0 380 490"
         style={{
           overflow: 'visible',
           transform: `translateY(${breathe + speakBob}px) scaleX(${flipX})`,
-          filter: isSpeaking ? 'drop-shadow(0 16px 28px rgba(0,0,0,0.6))' : 'brightness(0.86) drop-shadow(0 14px 20px rgba(0,0,0,0.5))',
+          filter: isSpeaking ? 'drop-shadow(0 18px 34px rgba(0,0,0,0.7))' : 'brightness(0.84) drop-shadow(0 14px 22px rgba(0,0,0,0.55))',
         }}
       >
-        {/* Ground shadow */}
-        <ellipse cx="190" cy="472" rx="108" ry="18" fill="rgba(0,0,0,0.48)" />
+        <defs>
+          <radialGradient id="skinShade" cx="38%" cy="32%" r="68%">
+            <stop offset="0%" stopColor="#FED7AA" />
+            <stop offset="65%" stopColor="#FDBA74" />
+            <stop offset="100%" stopColor="#D97706" />
+          </radialGradient>
+          <linearGradient id="hoodieShade" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor={outfit} />
+            <stop offset="100%" stopColor="#0F172A" />
+          </linearGradient>
+        </defs>
 
-        {/* Torso / Jacket */}
+        {/* Ambient rim glow from phone screen */}
+        {char.holdingPhone && <circle cx="240" cy="240" r="145" fill={phoneGlow} />}
+
+        {/* Torso / Hoodie with shading */}
         <path
-          d="M 88 465 C 88 320, 114 272, 190 272 C 266 272, 292 320, 292 465 Z"
-          fill={outfit}
-          stroke="#0F172A"
+          d="M 82 470 C 82 320, 112 270, 190 270 C 268 270, 298 320, 298 470 Z"
+          fill="url(#hoodieShade)"
+          stroke="#090D16"
           strokeWidth="6"
         />
-        {/* Inner shirt V-neck */}
-        <path d="M 158 274 L 190 342 L 222 274 Z" fill="#F8FAFC" opacity="0.92" />
+        <line x1="162" y1="286" x2="156" y2="352" stroke="#E2E8F0" strokeWidth="5" strokeLinecap="round" opacity="0.85" />
+        <line x1="218" y1="286" x2="224" y2="352" stroke="#E2E8F0" strokeWidth="5" strokeLinecap="round" opacity="0.85" />
 
-        {/* Optional Kazakh golden trim on vest/collar */}
-        {hasOrnament && (
-          <>
-            <path d="M 142 282 L 142 460" stroke="#FACC15" strokeWidth="6" strokeDasharray="14 8" opacity="0.85" />
-            <path d="M 238 282 L 238 460" stroke="#FACC15" strokeWidth="6" strokeDasharray="14 8" opacity="0.85" />
-          </>
-        )}
-
-        {/* Back Arm */}
-        <path
-          d={`M 102 320 Q 65 ${365 - gestureLift * 0.4} 84 420`}
-          fill="none"
-          stroke={outfit}
-          strokeWidth="30"
-          strokeLinecap="round"
-        />
-
-        {/* Front Speaking / Phone Arm */}
+        {/* Arms */}
+        <path d="M 98 324 Q 62 372 86 426" fill="none" stroke={outfit} strokeWidth="30" strokeLinecap="round" />
         {char.holdingPhone ? (
-          <g transform={`translate(0, ${-gestureLift * 0.4})`}>
-            <path d="M 276 320 Q 315 365 270 398" fill="none" stroke={outfit} strokeWidth="30" strokeLinecap="round" />
-            <rect x="255" y="346" width="34" height="58" rx="6" fill="#0F172A" stroke="#38BDF8" strokeWidth="3" />
-            <circle cx="268" cy="396" r="16" fill="#FDBA74" stroke="#0F172A" strokeWidth="4" />
+          <g>
+            <path d="M 278 324 Q 318 368 268 398" fill="none" stroke={outfit} strokeWidth="30" strokeLinecap="round" />
+            <rect x="252" y="340" width="38" height="64" rx="7" fill="#0F172A" stroke="#38BDF8" strokeWidth="3.5" />
+            <circle cx="268" cy="396" r="16" fill="#FDBA74" stroke="#090D16" strokeWidth="4" />
           </g>
         ) : (
-          <g>
-            <path
-              d={
-                isSpeaking
-                  ? `M 276 320 Q 328 ${312 - gestureLift} 314 ${248 - gestureLift}`
-                  : 'M 276 320 Q 312 372 282 422'
-              }
-              fill="none"
-              stroke={outfit}
-              strokeWidth="30"
-              strokeLinecap="round"
-            />
-            {isSpeaking && (
-              <circle cx="314" cy={244 - gestureLift} r="17" fill="#FDBA74" stroke="#0F172A" strokeWidth="5" />
-            )}
-          </g>
+          <path d="M 278 324 Q 316 372 284 426" fill="none" stroke={outfit} strokeWidth="30" strokeLinecap="round" />
         )}
 
         {/* Neck */}
-        <rect x="166" y="232" width="48" height="50" rx="14" fill="#FDBA74" stroke="#0F172A" strokeWidth="5" />
+        <rect x="166" y="232" width="48" height="50" rx="14" fill="#EA9B5A" stroke="#090D16" strokeWidth="5" />
 
-        {/* Woman long hair back layer */}
-        {role === 'woman' && (
-          <path
-            d="M 102 150 C 86 215, 92 275, 118 298 L 262 298 C 288 275, 294 215, 278 150 Z"
-            fill={hair}
-            stroke="#0F172A"
-            strokeWidth="5"
-          />
-        )}
+        {/* Head with 3D radial shading */}
+        <circle cx="190" cy="158" r="90" fill="url(#skinShade)" stroke="#090D16" strokeWidth="6" />
 
-        {/* Head */}
-        <circle cx="190" cy="158" r="88" fill="#FDBA74" stroke="#0F172A" strokeWidth="6" />
-
-        {/* Hair Front */}
+        {/* Hair */}
         {role === 'driver' ? (
-          /* Cap */
           <g>
-            <path d="M 104 136 C 110 68, 270 68, 276 136 Z" fill="#1E293B" stroke="#0F172A" strokeWidth="5" />
-            <path d="M 178 134 L 298 134 Q 290 116 250 118 Z" fill="#0F172A" />
+            <path d="M 102 136 C 108 66, 272 66, 278 136 Z" fill="#1E293B" stroke="#090D16" strokeWidth="5" />
+            <path d="M 178 134 L 302 134 Q 292 114 250 118 Z" fill="#090D16" />
           </g>
         ) : (
           <path
-            d="M 102 146 C 106 62, 274 62, 278 146 C 254 114, 218 104, 190 108 C 154 108, 122 122, 102 146 Z"
+            d="M 100 148 C 104 60, 276 60, 280 148 C 254 114, 218 102, 190 106 C 154 106, 120 120, 100 148 Z"
             fill={hair}
-            stroke="#0F172A"
+            stroke="#090D16"
             strokeWidth="5"
           />
         )}
 
-        {/* Beard (optional) */}
         {hasBeard && (
-          <path
-            d="M 122 194 Q 190 264 258 194 Q 246 238 190 246 Q 134 238 122 194 Z"
-            fill={hair}
-            opacity="0.9"
-          />
+          <path d="M 122 194 Q 190 266 258 194 Q 246 240 190 248 Q 134 240 122 194 Z" fill={hair} opacity="0.9" />
         )}
 
         {/* Eyes */}
-        {blink && mood !== 'shock' ? (
+        {blink && mood !== 'shock' && mood !== 'stress' ? (
           <>
-            <line x1="152" y1="158" x2="178" y2="158" stroke="#0F172A" strokeWidth="6" strokeLinecap="round" />
-            <line x1="214" y1="158" x2="240" y2="158" stroke="#0F172A" strokeWidth="6" strokeLinecap="round" />
+            <line x1="152" y1="158" x2="178" y2="158" stroke="#090D16" strokeWidth="6" strokeLinecap="round" />
+            <line x1="214" y1="158" x2="240" y2="158" stroke="#090D16" strokeWidth="6" strokeLinecap="round" />
           </>
-        ) : mood === 'shock' ? (
+        ) : mood === 'shock' || mood === 'stress' ? (
           <>
-            <circle cx="164" cy="156" r="18" fill="#FFFFFF" stroke="#0F172A" strokeWidth="4" />
-            <circle cx="168" cy="156" r="7" fill="#0F172A" />
-            <circle cx="226" cy="156" r="18" fill="#FFFFFF" stroke="#0F172A" strokeWidth="4" />
-            <circle cx="230" cy="156" r="7" fill="#0F172A" />
+            <circle cx="164" cy="156" r="19" fill="#FFFFFF" stroke="#090D16" strokeWidth="4" />
+            <circle cx="168" cy="156" r="7.5" fill="#090D16" />
+            <circle cx="226" cy="156" r="19" fill="#FFFFFF" stroke="#090D16" strokeWidth="4" />
+            <circle cx="230" cy="156" r="7.5" fill="#090D16" />
           </>
         ) : (
           <>
-            <circle cx="166" cy="158" r="10.5" fill="#0F172A" />
+            <circle cx="166" cy="158" r="11" fill="#090D16" />
             <circle cx="170" cy="154" r="3.5" fill="#FFFFFF" />
-            <circle cx="226" cy="158" r="10.5" fill="#0F172A" />
+            <circle cx="226" cy="158" r="11" fill="#090D16" />
             <circle cx="230" cy="154" r="3.5" fill="#FFFFFF" />
           </>
         )}
 
-        {/* Glasses */}
+        {/* Animated stress sweat drop */}
+        {(mood === 'stress' || mood === 'sad') && (
+          <path
+            d={`M 262 ${120 + sweatY} Q 274 ${138 + sweatY} 262 ${146 + sweatY} Q 250 ${138 + sweatY} 262 ${120 + sweatY} Z`}
+            fill="#38BDF8"
+            opacity={1 - sweatY / 28}
+          />
+        )}
+
         {hasGlasses && (
           <g>
-            <rect x="138" y="138" width="52" height="36" rx="10" fill="rgba(255,255,255,0.14)" stroke="#0F172A" strokeWidth="5" />
-            <rect x="202" y="138" width="52" height="36" rx="10" fill="rgba(255,255,255,0.14)" stroke="#0F172A" strokeWidth="5" />
-            <line x1="190" y1="154" x2="202" y2="154" stroke="#0F172A" strokeWidth="5" />
+            <rect x="138" y="138" width="52" height="36" rx="10" fill="rgba(255,255,255,0.14)" stroke="#090D16" strokeWidth="5" />
+            <rect x="202" y="138" width="52" height="36" rx="10" fill="rgba(255,255,255,0.14)" stroke="#090D16" strokeWidth="5" />
+            <line x1="190" y1="154" x2="202" y2="154" stroke="#090D16" strokeWidth="5" />
           </g>
         )}
 
         {/* Eyebrows */}
-        {mood === 'sad' ? (
+        {mood === 'sad' || mood === 'stress' ? (
           <>
-            <path d="M 144 136 L 178 128" stroke="#0F172A" strokeWidth="6" strokeLinecap="round" />
-            <path d="M 244 136 L 212 128" stroke="#0F172A" strokeWidth="6" strokeLinecap="round" />
+            <path d="M 142 136 L 178 124" stroke="#090D16" strokeWidth="6.5" strokeLinecap="round" />
+            <path d="M 248 136 L 212 124" stroke="#090D16" strokeWidth="6.5" strokeLinecap="round" />
           </>
         ) : mood === 'shock' ? (
           <>
-            <path d="M 144 124 Q 164 110 184 124" fill="none" stroke="#0F172A" strokeWidth="6" strokeLinecap="round" />
-            <path d="M 206 124 Q 226 110 246 124" fill="none" stroke="#0F172A" strokeWidth="6" strokeLinecap="round" />
+            <path d="M 144 122 Q 164 108 184 122" fill="none" stroke="#090D16" strokeWidth="6.5" strokeLinecap="round" />
+            <path d="M 206 122 Q 226 108 246 122" fill="none" stroke="#090D16" strokeWidth="6.5" strokeLinecap="round" />
           </>
         ) : (
           <>
-            <path d="M 146 132 Q 165 124 182 132" fill="none" stroke="#0F172A" strokeWidth="6" strokeLinecap="round" />
-            <path d="M 208 132 Q 226 124 244 132" fill="none" stroke="#0F172A" strokeWidth="6" strokeLinecap="round" />
+            <path d="M 146 132 Q 165 124 182 132" fill="none" stroke="#090D16" strokeWidth="6" strokeLinecap="round" />
+            <path d="M 208 132 Q 226 124 244 132" fill="none" stroke="#090D16" strokeWidth="6" strokeLinecap="round" />
           </>
         )}
 
@@ -584,433 +465,239 @@ const CharacterActor: React.FC<{
             rx={15 + mouthOpen * 8}
             ry={6 + mouthOpen * 16}
             fill="#7F1D1D"
-            stroke="#0F172A"
+            stroke="#090D16"
             strokeWidth="4.5"
           />
-        ) : mood === 'sad' ? (
-          <path d="M 172 210 Q 198 192 222 210" fill="none" stroke="#0F172A" strokeWidth="6" strokeLinecap="round" />
-        ) : mood === 'shock' ? (
-          <ellipse cx="198" cy="206" rx="15" ry="19" fill="#7F1D1D" stroke="#0F172A" strokeWidth="5" />
+        ) : mood === 'sad' || mood === 'stress' ? (
+          <path d="M 172 212 Q 198 192 224 212" fill="none" stroke="#090D16" strokeWidth="6" strokeLinecap="round" />
         ) : mood === 'happy' || mood === 'confident' ? (
-          <path d="M 166 196 Q 198 228 228 196 Z" fill="#FFFFFF" stroke="#0F172A" strokeWidth="5" strokeLinejoin="round" />
+          <path d="M 166 196 Q 198 228 228 196 Z" fill="#FFFFFF" stroke="#090D16" strokeWidth="5" strokeLinejoin="round" />
         ) : (
-          <path d="M 176 204 Q 198 210 220 202" fill="none" stroke="#0F172A" strokeWidth="5.5" strokeLinecap="round" />
+          <path d="M 176 204 Q 198 210 220 202" fill="none" stroke="#090D16" strokeWidth="5.5" strokeLinecap="round" />
         )}
       </svg>
-
-      {/* Clean Speaker Name Tag */}
-      {char.name && (
-        <div
-          style={{
-            marginTop: -12,
-            background: isSpeaking ? '#FACC15' : 'rgba(15, 23, 42, 0.85)',
-            color: isSpeaking ? '#0F172A' : '#CBD5E1',
-            border: `2px solid ${isSpeaking ? '#0F172A' : 'rgba(255,255,255,0.2)'}`,
-            borderRadius: 999,
-            padding: '6px 22px',
-            fontSize: 24,
-            fontWeight: 900,
-            boxShadow: '0 6px 16px rgba(0,0,0,0.4)',
-          }}
-        >
-          {char.name}
-        </div>
-      )}
     </div>
   );
 };
 
 // ============================================================================
-// TOP-THIRD MODULAR WIDGETS (CLEAN INFOGRAPHICS OVER DIALOGUE)
+// REALISTIC STORYTELLING OVERLAYS (SMS, BANK ALERT, BALANCE DROP, CLIFFHANGER)
 // ============================================================================
 
-const BanknoteSVG: React.FC<{ style?: React.CSSProperties }> = ({ style }) => (
-  <svg width="180" height="90" viewBox="0 0 210 105" style={style}>
-    <rect x="4" y="4" width="202" height="97" rx="12" fill="#16A34A" stroke="#052E16" strokeWidth="4" />
-    <rect x="14" y="14" width="182" height="77" rx="6" fill="none" stroke="#86EFAC" strokeWidth="2.5" strokeDasharray="6 4" />
-    <circle cx="105" cy="52" r="28" fill="#15803D" stroke="#FACC15" strokeWidth="3" />
-    <text x="105" y="61" textAnchor="middle" fill="#FACC15" fontSize="28" fontWeight="900">₸</text>
-    <text x="24" y="34" fill="#DCFCE7" fontSize="16" fontWeight="900">20 000</text>
-  </svg>
-);
-
-const CoinSVG: React.FC<{ size?: number }> = ({ size = 68 }) => (
-  <svg width={size} height={size} viewBox="0 0 80 80">
-    <circle cx="40" cy="40" r="36" fill="#FACC15" stroke="#B45309" strokeWidth="5" />
-    <circle cx="40" cy="40" r="27" fill="none" stroke="#FEF08A" strokeWidth="3" />
-    <text x="40" y="51" textAnchor="middle" fill="#92400E" fontSize="34" fontWeight="900">₸</text>
-  </svg>
-);
-
-const TopWidgetOverlay: React.FC<{ widget: WidgetConfig }> = ({ widget }) => {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const pop = spring({ frame, fps, config: { damping: 13 } });
-
-  const containerStyle: React.CSSProperties = {
-    position: 'absolute',
-    top: 155,
-    left: 58,
-    right: 58,
-    transform: `scale(${pop}) translateY(${interpolate(pop, [0, 1], [-30, 0])}px)`,
-    background: 'rgba(10, 15, 29, 0.9)',
-    border: '2.5px solid rgba(250, 204, 21, 0.45)',
-    borderRadius: 32,
-    padding: '32px 34px',
-    boxShadow: '0 24px 60px rgba(0,0,0,0.65)',
-    fontFamily: 'system-ui, -apple-system, sans-serif',
-  };
-
-  if (widget.type === 'versus') {
-    return (
-      <div style={containerStyle}>
-        {widget.title && (
-          <div style={{ textAlign: 'center', fontSize: 28, fontWeight: 800, color: '#94A3B8', marginBottom: 20, letterSpacing: 1 }}>
-            {widget.title}
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: 22 }}>
-          <div
-            style={{
-              flex: 1,
-              background: 'rgba(239, 68, 68, 0.14)',
-              border: '2px solid #EF4444',
-              borderRadius: 22,
-              padding: '22px 18px',
-              textAlign: 'center',
-            }}
-          >
-            <div style={{ fontSize: 24, fontWeight: 700, color: '#FCA5A5' }}>{widget.leftLabel || 'СТАРТ'}</div>
-            <div style={{ fontSize: 48, fontWeight: 900, color: '#F87171', marginTop: 6 }}>{widget.leftValue || '5 000 ₸'}</div>
-          </div>
-          <div
-            style={{
-              flex: 1,
-              background: 'rgba(74, 222, 128, 0.14)',
-              border: '2px solid #4ADE80',
-              borderRadius: 22,
-              padding: '22px 18px',
-              textAlign: 'center',
-            }}
-          >
-            <div style={{ fontSize: 24, fontWeight: 700, color: '#BBF7D0' }}>{widget.rightLabel || 'РЕЗУЛЬТАТ'}</div>
-            <div style={{ fontSize: 48, fontWeight: 900, color: '#4ADE80', marginTop: 6 }}>{widget.rightValue || '+680 000 ₸'}</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (widget.type === 'rng') {
-    const d1 = (Math.floor(frame / 3) * 7 + 3) % 10;
-    const d2 = (Math.floor(frame / 4) * 5 + 8) % 10;
-    const d3 = (Math.floor(frame / 3) * 3 + 6) % 10;
-    const myths = widget.myths || ['Кімсің?', 'Қанша салдың?'];
-    return (
-      <div style={containerStyle}>
-        <div style={{ textAlign: 'center', fontSize: 26, fontWeight: 900, color: '#38BDF8', letterSpacing: 2 }}>
-          {widget.title || 'ГСЧ • СЛУЧАЙНЫЙ АЛГОРИТМ'}
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 22, margin: '22px 0' }}>
-          {[d1, d2, d3].map((d, i) => (
-            <div
-              key={i}
-              style={{
-                width: 112,
-                height: 116,
-                background: '#020617',
-                border: '3px solid #FACC15',
-                borderRadius: 20,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 68,
-                fontWeight: 900,
-                color: '#FACC15',
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {d}
-            </div>
-          ))}
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 18, flexWrap: 'wrap' }}>
-          {myths.map((m, i) => (
-            <div
-              key={i}
-              style={{
-                background: 'rgba(239, 68, 68, 0.16)',
-                border: '2px solid #EF4444',
-                borderRadius: 14,
-                padding: '8px 20px',
-                fontSize: 26,
-                fontWeight: 800,
-                color: '#FCA5A5',
-                textDecoration: 'line-through',
-              }}
-            >
-              {m}
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (widget.type === 'rtp') {
-    const pct = widget.percent ?? 96;
-    const fill = interpolate(spring({ frame: Math.max(0, frame - 6), fps, config: { damping: 14 } }), [0, 1], [0, pct]);
-    return (
-      <div style={containerStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16 }}>
-          <span style={{ fontSize: 30, fontWeight: 900, color: '#F8FAFC' }}>{widget.title || 'МЕХАНИКА ОТДАЧИ'}</span>
-          <span style={{ fontSize: 44, fontWeight: 900, color: '#FACC15' }}>RTP {pct}%</span>
-        </div>
-        <div style={{ height: 42, background: '#EF4444', borderRadius: 21, overflow: 'hidden', border: '2px solid #0F172A' }}>
-          <div style={{ width: `${fill}%`, height: '100%', background: 'linear-gradient(90deg, #22C55E, #4ADE80)' }} />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 14, fontSize: 25, fontWeight: 800 }}>
-          <span style={{ color: '#4ADE80' }}>{widget.leftSplit || '96% — в призовой фонд'}</span>
-          <span style={{ color: '#F87171' }}>{widget.rightSplit || '4% — комиссия'}</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (widget.type === 'mini_slot') {
-    const stopped = frame > 28;
-    const vals = stopped ? ['7', '7', '7'] : [((frame * 3) % 9) + 1, ((frame * 5) % 9) + 1, ((frame * 7) % 9) + 1];
-    return (
-      <div style={{ ...containerStyle, border: stopped ? '3px solid #FACC15' : containerStyle.border }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-          <span style={{ fontSize: 26, fontWeight: 800, color: '#94A3B8' }}>СТАВКА: {widget.bet || '1 000 ₸'}</span>
-          <span style={{ fontSize: 34, fontWeight: 900, color: stopped ? '#4ADE80' : '#FACC15' }}>
-            {stopped ? widget.multiplier || 'x640' : 'СПИН...'}
-          </span>
-        </div>
-        <div style={{ display: 'flex', gap: 18, justifyContent: 'center' }}>
-          {vals.map((v, i) => (
-            <div
-              key={i}
-              style={{
-                flex: 1,
-                height: 150,
-                background: '#020617',
-                border: `3px solid ${stopped ? '#FACC15' : '#334155'}`,
-                borderRadius: 20,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 82,
-                fontWeight: 900,
-                color: stopped ? '#FACC15' : '#38BDF8',
-              }}
-            >
-              {v}
-            </div>
-          ))}
-        </div>
-        {stopped && (
-          <div style={{ textAlign: 'center', marginTop: 16, fontSize: 34, fontWeight: 900, color: '#4ADE80' }}>
-            {widget.winText || 'ЗАНОС ПОЙМАН!'}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  if (widget.type === 'push') {
-    return (
-      <div style={{ ...containerStyle, border: '3px solid #4ADE80', display: 'flex', alignItems: 'center', gap: 24 }}>
-        <CoinSVG size={78} />
-        <div>
-          <div style={{ fontSize: 25, fontWeight: 700, color: '#94A3B8' }}>{widget.bankTitle || 'Зачисление на карту • сейчас'}</div>
-          <div style={{ fontSize: 56, fontWeight: 900, color: '#4ADE80', lineHeight: 1.1 }}>{widget.amount || '+680 000 ₸'}</div>
-          {widget.subText && <div style={{ fontSize: 24, fontWeight: 700, color: '#FACC15', marginTop: 4 }}>{widget.subText}</div>}
-        </div>
-      </div>
-    );
-  }
-
-  // promo (clean trustworthy final card)
-  const pulse = 1 + Math.sin(frame / 6) * 0.03;
-  return (
-    <div style={{ ...containerStyle, border: '3px solid #FACC15', textAlign: 'center' }}>
-      <div style={{ fontSize: 26, fontWeight: 800, color: '#94A3B8', letterSpacing: 1.5 }}>
-        {widget.title || 'ПРОВЕРЬ НА ПРАКТИКЕ С ЗАПАСОМ'}
-      </div>
-      <div
-        style={{
-          marginTop: 16,
-          background: '#FACC15',
-          color: '#0F172A',
-          borderRadius: 22,
-          padding: '16px 24px',
-        }}
-      >
-        <div style={{ fontSize: 58, fontWeight: 900, letterSpacing: 2 }}>{widget.code || '1w_91444'}</div>
-        <div style={{ fontSize: 28, fontWeight: 900, color: '#B91C1C' }}>{widget.bonus || 'Бонус до +500% на старт'}</div>
-      </div>
-      <div style={{ marginTop: 16, transform: `scale(${pulse})`, fontSize: 34, fontWeight: 900, color: '#4ADE80' }}>
-        {widget.cta || 'Ссылка и промокод — в профиле ↓'}
-      </div>
-    </div>
-  );
-};
-
-// ============================================================================
-// OPTIONAL FULL-SCREEN CUTAWAYS (SLOT / CRASH / MONEY RAIN / PHONE)
-// ============================================================================
-
-const CutawayRenderer: React.FC<{ cutaway: CutawayConfig }> = ({ cutaway }) => {
+const StoryOverlay: React.FC<{ overlay: OverlayConfig }> = ({ overlay }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
+  const pop = spring({ frame, fps, config: { damping: 13 } });
 
-  if (cutaway.type === 'money_rain') {
-    const startVal = cutaway.startAmount ?? 5000;
-    const endVal = cutaway.winAmount ?? 680000;
-    const counter = Math.round(
-      interpolate(frame, [0, Math.max(20, durationInFrames * 0.7)], [startVal, endVal], {
-        easing: Easing.out(Easing.cubic),
-        extrapolateRight: 'clamp',
-      })
-    );
-    const pushes = cutaway.pushes || [{ title: 'Зачисление на карту • только что', value: `+${endVal.toLocaleString('ru-RU')} ₸`, accent: 'green' as const }];
+  // Safe top zone: below series HUD (top: 230px), right margin 120px to avoid TikTok icons
+  const wrapStyle: React.CSSProperties = {
+    position: 'absolute',
+    top: 235,
+    left: 52,
+    right: 120,
+    transform: `scale(${pop}) translateY(${interpolate(pop, [0, 1], [-35, 0])}px)`,
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+    zIndex: 10,
+  };
 
+  if (overlay.type === 'sms') {
     return (
-      <AbsoluteFill style={{ background: 'radial-gradient(circle at 50% 40%, #064E3B 0%, #070B14 82%)', overflow: 'hidden' }}>
-        {Array.from({ length: 14 }).map((_, i) => {
-          const y = ((frame * (14 + (i % 4) * 3) + i * 170) % 2100) - 200;
-          const x = ((i * 197) % 920) - 10;
-          const rot = (frame * (i % 2 === 0 ? 2.5 : -2.5) + i * 35) % 360;
-          return (
-            <div key={i} style={{ position: 'absolute', left: x, top: y, transform: `rotate(${rot}deg)`, opacity: 0.85 }}>
-              {i % 3 === 0 ? <CoinSVG size={78} /> : <BanknoteSVG />}
-            </div>
-          );
-        })}
-        <div style={{ position: 'absolute', top: 260, left: 55, right: 55, display: 'flex', flexDirection: 'column', gap: 18 }}>
-          {pushes.map((p, idx) => (
-            <div
-              key={idx}
-              style={{
-                background: 'rgba(15, 23, 42, 0.94)',
-                border: `2.5px solid ${p.accent === 'gold' ? '#FACC15' : '#4ADE80'}`,
-                borderRadius: 26,
-                padding: '22px 28px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 20,
-              }}
-            >
-              <CoinSVG size={66} />
-              <div>
-                <div style={{ fontSize: 25, color: '#94A3B8', fontWeight: 700 }}>{p.title}</div>
-                <div style={{ fontSize: 48, fontWeight: 900, color: p.accent === 'gold' ? '#FACC15' : '#4ADE80' }}>{p.value}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div style={{ position: 'absolute', top: 760, left: 0, right: 0, textAlign: 'center' }}>
-          <div style={{ fontSize: 112, fontWeight: 900, color: '#FACC15', textShadow: '0 8px 40px rgba(250,204,21,0.55)' }}>
-            {counter.toLocaleString('ru-RU')} ₸
-          </div>
-        </div>
-      </AbsoluteFill>
-    );
-  }
-
-  if (cutaway.type === 'crash_flight') {
-    const from = cutaway.from ?? 1.0;
-    const to = cutaway.to ?? 180;
-    const prog = interpolate(frame, [4, Math.max(12, durationInFrames - 8)], [0, 1], {
-      easing: Easing.in(Easing.cubic),
-      extrapolateLeft: 'clamp',
-      extrapolateRight: 'clamp',
-    });
-    const curX = from + (to - from) * prog;
-    return (
-      <AbsoluteFill style={{ background: 'radial-gradient(circle at 50% 45%, #0F172A 0%, #020617 90%)', justifyContent: 'center', alignItems: 'center', padding: '0 50px 200px' }}>
-        <div style={{ fontSize: 30, fontWeight: 800, color: '#38BDF8', letterSpacing: 2 }}>{cutaway.title || 'РОСТ МНОЖИТЕЛЯ'}</div>
-        <div style={{ fontSize: 164, fontWeight: 900, color: prog > 0.65 ? '#FACC15' : '#38BDF8', fontVariantNumeric: 'tabular-nums' }}>
-          x{curX.toFixed(1)}
-        </div>
-        <div style={{ marginTop: 24, width: 920, background: 'rgba(15,23,42,0.85)', border: '2px solid rgba(56,189,248,0.35)', borderRadius: 32, padding: 24 }}>
-          <svg width="872" height="420" viewBox="0 0 880 420">
-            <path
-              d="M 60 380 Q 480 360 820 38"
-              fill="none"
-              stroke={prog > 0.65 ? '#FACC15' : '#38BDF8'}
-              strokeWidth="14"
-              strokeLinecap="round"
-              strokeDasharray="1100"
-              strokeDashoffset={1100 * (1 - prog)}
-            />
-          </svg>
-        </div>
-      </AbsoluteFill>
-    );
-  }
-
-  // Default cutaway: slot_spin
-  const stop3 = Math.round(durationInFrames * 0.58);
-  const stops = [Math.round(durationInFrames * 0.28), Math.round(durationInFrames * 0.43), stop3];
-  const isWin = frame >= stop3 + 2;
-  const winPop = isWin ? spring({ frame: frame - stop3 - 2, fps, config: { damping: 10 } }) : 0;
-
-  return (
-    <AbsoluteFill
-      style={{
-        background: isWin ? 'radial-gradient(circle at 50% 45%, #451A03 0%, #070B14 80%)' : 'radial-gradient(circle at 50% 45%, #1E1B4B 0%, #070B14 85%)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: '0 45px 200px',
-      }}
-    >
-      <div style={{ marginBottom: 24, background: 'rgba(15,23,42,0.9)', border: '2px solid #FACC15', borderRadius: 999, padding: '12px 32px', fontSize: 34, fontWeight: 900, color: '#FACC15' }}>
-        СТАВКА: {cutaway.betAmount || '1 000 ₸'}
-      </div>
-      <div style={{ width: 940, background: '#0F172A', border: isWin ? '6px solid #FACC15' : '6px solid #6366F1', borderRadius: 40, padding: 30 }}>
-        <div style={{ display: 'flex', gap: 20, background: '#020617', borderRadius: 24, padding: 20 }}>
-          {stops.map((sf, idx) => {
-            const stopped = frame >= sf;
-            return (
+      <div style={wrapStyle}>
+        <div
+          style={{
+            background: 'rgba(15, 23, 42, 0.94)',
+            border: '2px solid rgba(56, 189, 248, 0.5)',
+            borderRadius: 28,
+            padding: '24px 28px',
+            boxShadow: '0 22px 55px rgba(0,0,0,0.7)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
               <div
-                key={idx}
                 style={{
-                  flex: 1,
-                  height: 320,
-                  background: '#1E293B',
-                  borderRadius: 18,
+                  width: 44,
+                  height: 44,
+                  borderRadius: '50%',
+                  background: '#22C55E',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  border: stopped ? '3px solid #FACC15' : '2px solid #334155',
-                  fontSize: 120,
+                  fontSize: 24,
                   fontWeight: 900,
-                  color: stopped ? '#FACC15' : '#38BDF8',
+                  color: '#FFFFFF',
                 }}
               >
-                {stopped ? '7' : ((frame * (idx + 3)) % 9) + 1}
+                W
               </div>
-            );
-          })}
+              <span style={{ fontSize: 30, fontWeight: 900, color: '#F8FAFC' }}>{overlay.sender || 'Жена'}</span>
+            </div>
+            <span style={{ fontSize: 22, fontWeight: 700, color: '#94A3B8' }}>{overlay.time || 'сейчас'}</span>
+          </div>
+          <div style={{ fontSize: 34, fontWeight: 700, color: '#E2E8F0', lineHeight: 1.28 }}>
+            {overlay.message || 'Купи хлеб и молоко по дороге домой'}
+          </div>
         </div>
       </div>
-      {isWin && (
-        <div style={{ marginTop: 30, transform: `scale(${winPop})`, background: '#FACC15', color: '#0F172A', padding: '16px 46px', borderRadius: 22, fontSize: 56, fontWeight: 900 }}>
-          {cutaway.winBanner || `MEGA WIN ${cutaway.winMultiplier || 'x680'}!`}
+    );
+  }
+
+  if (overlay.type === 'bank_alert') {
+    const isErr = overlay.isError ?? true;
+    return (
+      <div style={wrapStyle}>
+        <div
+          style={{
+            background: isErr ? 'rgba(69, 10, 10, 0.94)' : 'rgba(6, 78, 59, 0.94)',
+            border: `2.5px solid ${isErr ? '#EF4444' : '#4ADE80'}`,
+            borderRadius: 28,
+            padding: '24px 28px',
+            boxShadow: '0 24px 60px rgba(0,0,0,0.7)',
+          }}
+        >
+          <div style={{ fontSize: 24, fontWeight: 800, color: isErr ? '#FCA5A5' : '#BBF7D0', letterSpacing: 1 }}>
+            {overlay.bankTitle || 'УВЕДОМЛЕНИЕ БАНКА'}
+          </div>
+          <div style={{ fontSize: 56, fontWeight: 900, color: isErr ? '#F87171' : '#4ADE80', marginTop: 4 }}>
+            {overlay.amount || '0 ₸'}
+          </div>
+          {overlay.subText && (
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#F8FAFC', marginTop: 6 }}>{overlay.subText}</div>
+          )}
         </div>
-      )}
-    </AbsoluteFill>
+      </div>
+    );
+  }
+
+  if (overlay.type === 'balance_drop') {
+    const fromVal = overlay.fromAmount ?? 180000;
+    const toVal = overlay.toAmount ?? 0;
+    const cur = Math.round(
+      interpolate(frame, [6, Math.max(24, durationInFrames * 0.65)], [fromVal, toVal], {
+        easing: Easing.out(Easing.cubic),
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      })
+    );
+    const isDrop = toVal < fromVal;
+    return (
+      <div style={wrapStyle}>
+        <div
+          style={{
+            background: 'rgba(10, 14, 26, 0.92)',
+            border: `2.5px solid ${isDrop ? '#EF4444' : '#4ADE80'}`,
+            borderRadius: 30,
+            padding: '28px 32px',
+            textAlign: 'center',
+            boxShadow: '0 24px 60px rgba(0,0,0,0.75)',
+          }}
+        >
+          <div style={{ fontSize: 26, fontWeight: 800, color: '#94A3B8', letterSpacing: 1.5 }}>
+            {overlay.label || 'БАЛАНС НА КАРТЕ'}
+          </div>
+          <div
+            style={{
+              fontSize: 82,
+              fontWeight: 900,
+              color: cur === 0 ? '#EF4444' : isDrop ? '#F87171' : '#4ADE80',
+              fontVariantNumeric: 'tabular-nums',
+              lineHeight: 1.1,
+              marginTop: 6,
+            }}
+          >
+            {cur.toLocaleString('ru-RU')} ₸
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (overlay.type === 'versus') {
+    return (
+      <div style={wrapStyle}>
+        <div
+          style={{
+            background: 'rgba(10, 15, 29, 0.92)',
+            border: '2px solid rgba(250, 204, 21, 0.45)',
+            borderRadius: 28,
+            padding: '24px 26px',
+          }}
+        >
+          {overlay.title && (
+            <div style={{ textAlign: 'center', fontSize: 24, fontWeight: 800, color: '#94A3B8', marginBottom: 16 }}>
+              {overlay.title}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 16 }}>
+            <div style={{ flex: 1, background: 'rgba(239,68,68,0.16)', border: '2px solid #EF4444', borderRadius: 20, padding: '18px 12px', textAlign: 'center' }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#FCA5A5' }}>{overlay.leftLabel || 'БЫЛО'}</div>
+              <div style={{ fontSize: 42, fontWeight: 900, color: '#F87171', marginTop: 4 }}>{overlay.leftValue || '180 000 ₸'}</div>
+            </div>
+            <div style={{ flex: 1, background: 'rgba(74,222,128,0.16)', border: '2px solid #4ADE80', borderRadius: 20, padding: '18px 12px', textAlign: 'center' }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#BBF7D0' }}>{overlay.rightLabel || 'СТАЛО'}</div>
+              <div style={{ fontSize: 42, fontWeight: 900, color: '#4ADE80', marginTop: 4 }}>{overlay.rightValue || '0 ₸'}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // cliffhanger (100% TikTok-safe end card)
+  const pulse = 1 + Math.sin(frame / 6) * 0.03;
+  return (
+    <div style={wrapStyle}>
+      <div
+        style={{
+          background: 'rgba(10, 15, 29, 0.94)',
+          border: '3px solid #FACC15',
+          borderRadius: 30,
+          padding: '28px 30px',
+          textAlign: 'center',
+          boxShadow: '0 24px 65px rgba(0,0,0,0.75)',
+        }}
+      >
+        <div
+          style={{
+            display: 'inline-block',
+            background: '#EF4444',
+            color: '#FFFFFF',
+            padding: '6px 20px',
+            borderRadius: 999,
+            fontSize: 22,
+            fontWeight: 900,
+            letterSpacing: 1.5,
+          }}
+        >
+          {overlay.badge || 'ПРОДОЛЖЕНИЕ УЖЕ ВЫШЛО'}
+        </div>
+        <div style={{ fontSize: 42, fontWeight: 900, color: '#F8FAFC', marginTop: 14, lineHeight: 1.18 }}>
+          {overlay.title || 'Чем закончилась та ночь?'}
+        </div>
+        <div
+          style={{
+            marginTop: 18,
+            transform: `scale(${pulse})`,
+            background: '#FACC15',
+            color: '#0F172A',
+            borderRadius: 18,
+            padding: '14px 20px',
+            fontSize: 30,
+            fontWeight: 900,
+          }}
+        >
+          {overlay.cta || 'Смотри в нашем чате • Ссылка в профиле ↑'}
+        </div>
+      </div>
+    </div>
   );
 };
 
 // ============================================================================
-// PER-LINE SYNCED KAZAKH SUBTITLES (ZERO DRIFT, HIGH CONTRAST)
+// TIKTOK-SAFE KAZAKH SUBTITLES (RAISED TO BOTTOM: 525px, RIGHT MARGIN 135px)
 // ============================================================================
 
-const SyncedLineCaptions: React.FC<{ text: string; speakerName?: string }> = ({ text, speakerName }) => {
+const SafeZoneCaptions: React.FC<{ text: string }> = ({ text }) => {
   const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
 
@@ -1018,7 +705,7 @@ const SyncedLineCaptions: React.FC<{ text: string; speakerName?: string }> = ({ 
   if (words.length === 0) return null;
 
   const activeIdx = Math.min(words.length - 1, Math.floor((frame / Math.max(1, durationInFrames)) * words.length));
-  const chunkSize = 5;
+  const chunkSize = 4;
   const start = Math.floor(activeIdx / chunkSize) * chunkSize;
   const visible = words.slice(start, start + chunkSize);
 
@@ -1026,27 +713,26 @@ const SyncedLineCaptions: React.FC<{ text: string; speakerName?: string }> = ({ 
     <div
       style={{
         position: 'absolute',
-        bottom: 155,
-        left: 52,
-        right: 52,
+        bottom: 525, // Safely above TikTok/Reels description, account name & action buttons
+        left: 44,
+        right: 135, // Safely clear of right-side Like/Comment/Share column
         display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 10,
-        fontFamily: 'system-ui, -apple-system, sans-serif',
+        justifyContent: 'center',
+        zIndex: 20,
       }}
     >
-      {speakerName && (
-        <div style={{ fontSize: 22, fontWeight: 800, color: '#94A3B8', letterSpacing: 1.5, textTransform: 'uppercase' }}>
-          {speakerName}
-        </div>
-      )}
       <div
         style={{
-          display: 'flex',
+          display: 'inline-flex',
           flexWrap: 'wrap',
           justifyContent: 'center',
-          gap: '8px 14px',
+          gap: '6px 12px',
+          background: 'rgba(6, 9, 18, 0.78)',
+          border: '1.5px solid rgba(255, 255, 255, 0.14)',
+          borderRadius: 20,
+          padding: '14px 22px',
+          boxShadow: '0 14px 35px rgba(0, 0, 0, 0.65)',
+          fontFamily: 'system-ui, -apple-system, sans-serif',
         }}
       >
         {visible.map((w, i) => {
@@ -1055,13 +741,12 @@ const SyncedLineCaptions: React.FC<{ text: string; speakerName?: string }> = ({ 
             <span
               key={`${start + i}`}
               style={{
-                fontSize: 48,
+                fontSize: 44,
                 fontWeight: 900,
                 color: isCur ? '#FACC15' : '#FFFFFF',
                 transform: isCur ? 'scale(1.07)' : 'scale(1)',
                 display: 'inline-block',
-                WebkitTextStroke: '2px #020617',
-                textShadow: '0 5px 18px rgba(0,0,0,0.98)',
+                textShadow: '0 3px 12px rgba(0,0,0,0.95)',
               }}
             >
               {w}
@@ -1074,10 +759,77 @@ const SyncedLineCaptions: React.FC<{ text: string; speakerName?: string }> = ({ 
 };
 
 // ============================================================================
-// DIALOGUE SCENE SEGMENT WITH VIRTUAL CAMERA OPERATOR
+// SERIES HUD HEADER (● REC | ДНЕВНИК ЛУДОМАНА • ДЕНЬ 1)
 // ============================================================================
 
-const DialogueSegment: React.FC<{
+const SeriesHUD: React.FC<{ title?: string; timestamp?: string }> = ({ title, timestamp }) => {
+  const frame = useCurrentFrame();
+  const recOn = Math.floor(frame / 14) % 2 === 0;
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 112, // Safely below phone status bar & TikTok top icons
+        left: 48,
+        right: 120,
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        zIndex: 15,
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+      }}
+    >
+      <div
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 12,
+          background: 'rgba(9, 13, 24, 0.85)',
+          border: '1.5px solid rgba(255, 255, 255, 0.18)',
+          borderRadius: 999,
+          padding: '10px 22px',
+        }}
+      >
+        <div
+          style={{
+            width: 14,
+            height: 14,
+            borderRadius: '50%',
+            background: '#EF4444',
+            opacity: recOn ? 1 : 0.25,
+            boxShadow: recOn ? '0 0 12px #EF4444' : 'none',
+          }}
+        />
+        <span style={{ fontSize: 24, fontWeight: 900, color: '#F8FAFC', letterSpacing: 1 }}>
+          {title || 'ДНЕВНИК ЛУДОМАНА • ДЕНЬ 1'}
+        </span>
+      </div>
+
+      {timestamp && (
+        <div
+          style={{
+            background: 'rgba(9, 13, 24, 0.78)',
+            borderRadius: 12,
+            padding: '8px 14px',
+            fontSize: 20,
+            fontWeight: 800,
+            color: '#94A3B8',
+            fontFamily: 'monospace',
+          }}
+        >
+          {timestamp}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================================================
+// DIALOGUE SEGMENT WITH VIRTUAL CAMERA & DRAMATIC VFX
+// ============================================================================
+
+const StorySegment: React.FC<{
   line: DialogueLine;
   lineIndex: number;
   location?: string;
@@ -1092,74 +844,94 @@ const DialogueSegment: React.FC<{
   const isLeftSpeaking = line.speaker === 'left' || Boolean(singleCharacter);
   const sfxPath = line.sfx && sfxFiles?.[line.sfx] ? sfxFiles[line.sfx] : undefined;
 
-  // Virtual camera: punch-in on hook (line 0), subtle pan toward active speaker
-  const hookZoom = lineIndex === 0 ? interpolate(frame, [0, 14], [1.11, 1.03], { extrapolateRight: 'clamp' }) : 1.02;
-  const camZoom = hookZoom + interpolate(frame, [0, durationInFrames], [0, 0.025], { extrapolateRight: 'clamp' });
-  const targetPanX = singleCharacter ? 0 : isLeftSpeaking ? 26 : -26;
-  const camPanX = interpolate(frame, [0, 16], [0, targetPanX], {
+  // Virtual camera: hook punch-in, slow dramatic push-in, optional zoomToFace
+  const baseZoom = line.zoomToFace ? 1.14 : lineIndex === 0 ? interpolate(frame, [0, 14], [1.12, 1.03], { extrapolateRight: 'clamp' }) : 1.02;
+  const camZoom = baseZoom + interpolate(frame, [0, durationInFrames], [0, 0.035], { extrapolateRight: 'clamp' });
+  const targetPanX = singleCharacter ? -28 : isLeftSpeaking ? 24 : -48;
+  const camPanX = interpolate(frame, [0, 14], [0, targetPanX], {
     easing: Easing.out(Easing.cubic),
     extrapolateRight: 'clamp',
   });
 
-  const activeSpeakerName = isLeftSpeaking ? leftChar.name : rightChar.name;
+  // Dramatic camera shake on danger VFX
+  const shakeActive = line.vfx === 'danger' && frame < 18;
+  const shakeX = shakeActive ? Math.sin(frame * 3.8) * (18 - frame) * 0.9 : 0;
+  const shakeY = shakeActive ? Math.cos(frame * 4.2) * (18 - frame) * 0.7 : 0;
+
+  const dangerPulse = line.vfx === 'danger' ? 0.25 + 0.18 * Math.sin(frame / 4) : 0;
+  const flashOp = line.vfx === 'flash' || line.vfx === 'comeback'
+    ? interpolate(frame, [0, 10], [0.45, 0], { extrapolateRight: 'clamp' })
+    : 0;
 
   return (
     <AbsoluteFill>
-      {/* Line voiceover */}
       {line.audioFile && <Audio src={staticFile(line.audioFile)} />}
-      {/* Cue SFX */}
-      {sfxPath && <Audio src={staticFile(sfxPath)} volume={0.55} />}
+      {sfxPath && <Audio src={staticFile(sfxPath)} volume={0.62} />}
 
-      {line.cutaway ? (
-        <CutawayRenderer cutaway={line.cutaway} />
-      ) : (
-        <AbsoluteFill style={{ transform: `scale(${camZoom}) translateX(${camPanX}px)` }}>
-          <LocationBackground location={location} />
+      <AbsoluteFill style={{ transform: `scale(${camZoom}) translate(${camPanX + shakeX}px, ${shakeY}px)` }}>
+        <LocationBackdrop location={location} />
 
-          {/* Characters standing on terrace */}
-          <div
-            style={{
-              position: 'absolute',
-              bottom: 390,
-              left: 0,
-              right: 0,
-              display: 'flex',
-              justifyContent: singleCharacter ? 'center' : 'space-between',
-              alignItems: 'flex-end',
-              padding: singleCharacter ? '0' : '0 70px',
-            }}
-          >
+        {/* Characters positioned in the upper-mid/lower-mid safe area (above subtitles & UI) */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 650, // Above the 525px subtitle bar so faces are 100% unobstructed
+            left: 0,
+            right: 90, // Clear of TikTok right-side buttons
+            display: 'flex',
+            justifyContent: singleCharacter ? 'center' : 'space-between',
+            alignItems: 'flex-end',
+            padding: singleCharacter ? '0' : '0 55px',
+          }}
+        >
+          <CharacterActor
+            char={leftChar}
+            mood={isLeftSpeaking ? line.mood || 'neutral' : line.otherMood || 'neutral'}
+            isSpeaking={isLeftSpeaking}
+            facing="right"
+            scale={singleCharacter ? 1.16 : 0.9}
+            reaction={isLeftSpeaking ? line.reaction : undefined}
+          />
+
+          {!singleCharacter && (
             <CharacterActor
-              char={leftChar}
-              mood={isLeftSpeaking ? line.mood || 'neutral' : line.otherMood || 'neutral'}
-              isSpeaking={isLeftSpeaking}
-              facing="right"
-              scale={singleCharacter ? 1.15 : 0.96}
-              reaction={isLeftSpeaking ? line.reaction : undefined}
+              char={rightChar}
+              mood={!isLeftSpeaking ? line.mood || 'confident' : line.otherMood || 'neutral'}
+              isSpeaking={!isLeftSpeaking}
+              facing="left"
+              scale={0.9}
+              reaction={!isLeftSpeaking ? line.reaction : undefined}
             />
+          )}
+        </div>
+      </AbsoluteFill>
 
-            {!singleCharacter && (
-              <CharacterActor
-                char={rightChar}
-                mood={!isLeftSpeaking ? line.mood || 'confident' : line.otherMood || 'neutral'}
-                isSpeaking={!isLeftSpeaking}
-                facing="left"
-                scale={0.96}
-                reaction={!isLeftSpeaking ? line.reaction : undefined}
-              />
-            )}
-          </div>
-        </AbsoluteFill>
+      {/* Dramatic Red Vignette on Danger */}
+      {dangerPulse > 0 && (
+        <AbsoluteFill
+          style={{
+            pointerEvents: 'none',
+            background: `radial-gradient(circle, transparent 42%, rgba(220, 38, 38, ${dangerPulse}) 100%)`,
+          }}
+        />
       )}
 
-      {/* Top-third Modular Widget */}
-      {!line.cutaway && line.widget && <TopWidgetOverlay widget={line.widget} />}
+      {/* Golden / White Impact Flash */}
+      {flashOp > 0 && (
+        <AbsoluteFill
+          style={{
+            pointerEvents: 'none',
+            backgroundColor: line.vfx === 'comeback' ? '#FEF08A' : '#FFFFFF',
+            opacity: flashOp,
+          }}
+        />
+      )}
 
-      {/* Subtle Kazakh Gold Frame */}
-      <KazakhOrnamentFrame />
+      {/* Realistic Storytelling Overlay */}
+      {line.overlay && <StoryOverlay overlay={line.overlay} />}
 
-      {/* Synced Per-Line Kazakh Subtitles */}
-      <SyncedLineCaptions text={line.kz} speakerName={activeSpeakerName} />
+      {/* TikTok-Safe Kazakh Subtitles */}
+      <SafeZoneCaptions text={line.kz} />
     </AbsoluteFill>
   );
 };
@@ -1170,43 +942,34 @@ const DialogueSegment: React.FC<{
 
 const MainVideo: React.FC<VideoProps> = ({ config, subsKz, hasAudio, sfxFiles }) => {
   const frame = useCurrentFrame();
-  const { fps, durationInFrames } = useVideoConfig();
+  const { durationInFrames } = useVideoConfig();
 
   const dialogue = config.dialogue || [];
   const leftChar: CharacterConfig = config.characters?.left || {
-    name: 'Ерлан',
+    name: 'Арман',
     role: 'young',
     holdingPhone: true,
-    outfitColor: '#0F766E',
+    outfitColor: '#1E293B',
   };
   const rightChar: CharacterConfig = config.characters?.right || {
-    name: 'Дәурен аға',
-    role: 'elder',
-    glasses: true,
+    name: 'Данияр',
+    role: 'driver',
     beard: true,
-    ornament: true,
-    outfitColor: '#1E3A8A',
+    outfitColor: '#0F766E',
   };
 
   const bgmPath = sfxFiles?.bgm;
-  const bgmVol = config.bgmVolume ?? 0.12;
-
-  const showAt = (config.sticker?.showAtSec ?? 999) * fps;
-  const stickerSpring =
-    config.sticker?.code && frame >= showAt
-      ? spring({ frame: frame - showAt, fps, config: { damping: 12 } })
-      : 0;
+  const bgmVol = config.bgmVolume ?? 0.14;
 
   return (
-    <AbsoluteFill style={{ backgroundColor: '#070B14', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-      {/* Looping Subtle Background Beat */}
+    <AbsoluteFill style={{ backgroundColor: '#050811', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      {/* Atmospheric Late-Night Background Pulse */}
       {bgmPath && (
         <Loop durationInFrames={240}>
           <Audio src={staticFile(bgmPath)} volume={bgmVol} />
         </Loop>
       )}
 
-      {/* Dialogue Mode (Primary v6.0) */}
       {dialogue.length > 0 ? (
         dialogue.map((line, idx) => (
           <Sequence
@@ -1214,7 +977,7 @@ const MainVideo: React.FC<VideoProps> = ({ config, subsKz, hasAudio, sfxFiles })
             from={line.fromFrame ?? idx * 90}
             durationInFrames={line.durationInFrames ?? 90}
           >
-            <DialogueSegment
+            <StorySegment
               line={line}
               lineIndex={idx}
               location={config.location}
@@ -1226,49 +989,29 @@ const MainVideo: React.FC<VideoProps> = ({ config, subsKz, hasAudio, sfxFiles })
           </Sequence>
         ))
       ) : (
-        /* Legacy Single-Voice Fallback */
         <AbsoluteFill>
           {hasAudio && <Audio src={staticFile('voice.mp3')} />}
-          <LocationBackground location={config.location} />
-          <div style={{ position: 'absolute', bottom: 400, left: 0, right: 0, display: 'flex', justifyContent: 'center' }}>
-            <CharacterActor char={leftChar} mood="happy" isSpeaking={true} facing="right" scale={1.15} />
+          <LocationBackdrop location={config.location} />
+          <div style={{ position: 'absolute', bottom: 660, left: 0, right: 90, display: 'flex', justifyContent: 'center' }}>
+            <CharacterActor char={leftChar} mood="stress" isSpeaking={true} facing="right" scale={1.16} />
           </div>
-          <KazakhOrnamentFrame />
-          <SyncedLineCaptions text={subsKz || ''} />
+          <SafeZoneCaptions text={subsKz || ''} />
         </AbsoluteFill>
       )}
 
+      {/* Series Header HUD */}
+      <SeriesHUD title={config.seriesTitle} timestamp={config.timestamp} />
+
       {/* Top Progress Bar */}
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 8, background: 'rgba(255,255,255,0.14)' }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 8, background: 'rgba(255,255,255,0.14)', zIndex: 30 }}>
         <div
           style={{
             width: `${(frame / durationInFrames) * 100}%`,
             height: '100%',
-            background: 'linear-gradient(90deg, #4ADE80, #FACC15)',
+            background: 'linear-gradient(90deg, #EF4444, #FACC15)',
           }}
         />
       </div>
-
-      {/* Optional Floating Promo Badge (appears only at showAtSec) */}
-      {stickerSpring > 0 && config.sticker && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 46,
-            right: 42,
-            transform: `scale(${stickerSpring})`,
-            background: 'rgba(15, 23, 42, 0.92)',
-            border: '2px solid #FACC15',
-            borderRadius: 16,
-            padding: '8px 18px',
-            textAlign: 'right',
-            boxShadow: '0 10px 26px rgba(0,0,0,0.45)',
-          }}
-        >
-          <div style={{ fontSize: 28, fontWeight: 900, color: '#FACC15', letterSpacing: 1 }}>{config.sticker.code}</div>
-          <div style={{ fontSize: 16, fontWeight: 800, color: '#F8FAFC' }}>{config.sticker.label}</div>
-        </div>
-      )}
     </AbsoluteFill>
   );
 };
@@ -1286,9 +1029,11 @@ export const RemotionRoot: React.FC = () => (
     })}
     defaultProps={{
       config: {
-        id: 6,
-        location: 'kok_tobe_almaty',
-        sticker: { code: '1w_91444', label: '+500% на 4 старта', showAtSec: 18 },
+        id: 12,
+        seriesTitle: 'ДНЕВНИК ЛУДОМАНА • ДЕНЬ 1',
+        timestamp: '03:14 • АЛМАТЫ',
+        location: 'night_car',
+        singleCharacter: true,
         dialogue: [],
       },
       subsKz: '',

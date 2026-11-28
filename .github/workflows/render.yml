@@ -24,7 +24,7 @@ jobs:
           npm install
           pip install --upgrade edge-tts mutagen gTTS
 
-      - name: Synthesize SFX, Generate Multi-Voice TTS & Props
+      - name: Synthesize Cinematic SFX, Generate TTS & Props
         env:
           VOICE_RU: ${{ github.event.client_payload.voice_ru }}
           SUBS_KZ: ${{ github.event.client_payload.subs_kz }}
@@ -37,8 +37,8 @@ jobs:
           from gtts import gTTS
 
           # =====================================================================
-          # 1. BUILT-IN PROCEDURAL SFX & BGM SYNTHESIZER
-          # Checks public/sfx/{name}.mp3 or .wav first; synthesizes if missing
+          # 1. CINEMATIC STORYTELLING SFX & BGM SYNTHESIZER (v7.0)
+          # Uses custom files in public/sfx/ if present, otherwise synthesizes
           # =====================================================================
           SR = 44100
 
@@ -54,7 +54,7 @@ jobs:
                   wf.writeframes(buf)
 
           def ensure_sfx():
-              rng = random.Random(42)
+              rng = random.Random(77)
               resolved = {}
 
               def find_custom(name):
@@ -64,7 +64,78 @@ jobs:
                           return f'sfx/{name}.{ext}'
                   return None
 
-              # pop.wav
+              # boom.wav — dramatic sub-bass drop
+              custom = find_custom('boom')
+              if custom:
+                  resolved['boom'] = custom
+              else:
+                  n = int(SR * 0.85)
+                  samples = []
+                  for i in range(n):
+                      t = i / SR
+                      env = math.exp(-t * 3.8) * min(1.0, t / 0.008)
+                      freq = 36.0 + 95.0 * math.exp(-t * 14.0)
+                      sub = math.sin(2 * math.pi * freq * t)
+                      punch = 0.25 * math.exp(-t * 30.0) * rng.uniform(-1.0, 1.0)
+                      samples.append(0.85 * env * sub + punch)
+                  write_wav('public/sfx/boom.wav', samples)
+                  resolved['boom'] = 'sfx/boom.wav'
+
+              # sms.wav — crisp double-tone notification chime
+              custom = find_custom('sms')
+              if custom:
+                  resolved['sms'] = custom
+              else:
+                  n = int(SR * 0.38)
+                  samples = []
+                  for i in range(n):
+                      t = i / SR
+                      s = 0.0
+                      if t < 0.14:
+                          e1 = math.exp(-t * 18.0) * min(1.0, t / 0.004)
+                          s += 0.55 * e1 * (math.sin(2*math.pi*880.0*t) + 0.25*math.sin(2*math.pi*1760.0*t))
+                      if t >= 0.10:
+                          t2 = t - 0.10
+                          e2 = math.exp(-t2 * 12.0) * min(1.0, t2 / 0.004)
+                          s += 0.65 * e2 * (math.sin(2*math.pi*1174.66*t2) + 0.2*math.sin(2*math.pi*2349.32*t2))
+                      samples.append(s)
+                  write_wav('public/sfx/sms.wav', samples)
+                  resolved['sms'] = 'sfx/sms.wav'
+
+              # heartbeat.wav — tense double-thump
+              custom = find_custom('heartbeat')
+              if custom:
+                  resolved['heartbeat'] = custom
+              else:
+                  n = int(SR * 0.75)
+                  samples = [0.0] * n
+                  for start_t, amp in [(0.0, 0.85), (0.24, 0.65)]:
+                      si = int(start_t * SR)
+                      for i in range(si, min(n, si + int(0.22 * SR))):
+                          t = (i - si) / SR
+                          env = math.exp(-t * 16.0) * min(1.0, t / 0.01)
+                          freq = 44.0 + 36.0 * math.exp(-t * 22.0)
+                          samples[i] += amp * env * math.sin(2 * math.pi * freq * t)
+                  write_wav('public/sfx/heartbeat.wav', samples)
+                  resolved['heartbeat'] = 'sfx/heartbeat.wav'
+
+              # whoosh.wav — smooth transition
+              custom = find_custom('whoosh')
+              if custom:
+                  resolved['whoosh'] = custom
+              else:
+                  n = int(SR * 0.32)
+                  samples, prev = [], 0.0
+                  for i in range(n):
+                      u = i / n
+                      env = math.sin(math.pi * u) ** 1.6
+                      alpha = 0.04 + 0.24 * math.sin(math.pi * u)
+                      prev = prev + alpha * (rng.uniform(-1.0, 1.0) - prev)
+                      samples.append(0.7 * env * prev)
+                  write_wav('public/sfx/whoosh.wav', samples)
+                  resolved['whoosh'] = 'sfx/whoosh.wav'
+
+              # pop.wav — subtle UI pop
               custom = find_custom('pop')
               if custom:
                   resolved['pop'] = custom
@@ -78,83 +149,30 @@ jobs:
                   write_wav('public/sfx/pop.wav', samples)
                   resolved['pop'] = 'sfx/pop.wav'
 
-              # whoosh.wav
-              custom = find_custom('whoosh')
-              if custom:
-                  resolved['whoosh'] = custom
-              else:
-                  n = int(SR * 0.32)
-                  samples, prev = [], 0.0
-                  for i in range(n):
-                      u = i / n
-                      env = math.sin(math.pi * u) ** 1.6
-                      alpha = 0.04 + 0.25 * math.sin(math.pi * u)
-                      prev = prev + alpha * (rng.uniform(-1.0, 1.0) - prev)
-                      samples.append(0.7 * env * prev)
-                  write_wav('public/sfx/whoosh.wav', samples)
-                  resolved['whoosh'] = 'sfx/whoosh.wav'
-
-              # coin.wav
-              custom = find_custom('coin')
-              if custom:
-                  resolved['coin'] = custom
-              else:
-                  n = int(SR * 0.45)
-                  samples = []
-                  for i in range(n):
-                      t = i / SR
-                      env = math.exp(-t * 8.5) * min(1.0, t / 0.004)
-                      f = 987.77 if t < 0.085 else 1318.51
-                      samples.append(0.55 * env * (math.sin(2*math.pi*f*t) + 0.35*math.sin(4*math.pi*f*t)))
-                  write_wav('public/sfx/coin.wav', samples)
-                  resolved['coin'] = 'sfx/coin.wav'
-
-              # win.wav
-              custom = find_custom('win')
-              if custom:
-                  resolved['win'] = custom
-              else:
-                  n = int(SR * 0.95)
-                  samples = [0.0] * n
-                  for start_t, freq in [(0.00, 523.25), (0.08, 659.25), (0.16, 783.99), (0.24, 1046.50)]:
-                      si = int(start_t * SR)
-                      for i in range(si, n):
-                          t = (i - si) / SR
-                          env = math.exp(-t * 4.2) * min(1.0, t / 0.008)
-                          samples[i] += 0.26 * env * (math.sin(2*math.pi*freq*t) + 0.25*math.sin(4*math.pi*freq*t))
-                  write_wav('public/sfx/win.wav', samples)
-                  resolved['win'] = 'sfx/win.wav'
-
-              # bgm.wav (8-second seamless lo-fi pulse loop)
+              # bgm.wav — moody late-night atmospheric synth + clock tick (8s loop)
               custom = find_custom('bgm')
               if custom:
                   resolved['bgm'] = custom
               else:
                   n = int(SR * 8.0)
                   samples = [0.0] * n
-                  beat_sec = 60.0 / 90.0
                   chords = [
-                      [220.0, 261.63, 329.63],
-                      [174.61, 220.0, 261.63],
-                      [196.0, 246.94, 293.66],
-                      [164.81, 196.0, 246.94],
+                      [110.0, 130.81, 164.81, 246.94],
+                      [87.31, 110.0, 130.81, 196.0],
+                      [98.0, 123.47, 146.83, 220.0],
+                      [82.41, 98.0, 123.47, 164.81],
                   ]
+                  beat_sec = 60.0 / 82.0
                   for i in range(n):
                       t = i / SR
                       c_idx = int(t / 2.0) % len(chords)
-                      pad_env = math.sin(math.pi * ((t % 2.0) / 2.0)) ** 0.5
-                      pad = sum(math.sin(2*math.pi*f*t) for f in chords[c_idx]) * 0.08 * pad_env
-                      beat_pos = (t / beat_sec) % 4.0
-                      kick = 0.0
-                      for b in (0.0, 2.0):
-                          dt = beat_pos - b
-                          if 0 <= dt < 0.22:
-                              kt = dt * beat_sec
-                              kf = 48.0 + 70.0 * math.exp(-kt * 28.0)
-                              kick += 0.32 * math.exp(-kt * 14.0) * math.sin(2*math.pi*kf*kt)
-                      eighth = (t / (beat_sec * 0.5)) % 1.0
-                      hat = 0.045 * (1.0 - eighth / 0.04) * rng.uniform(-1.0, 1.0) if eighth < 0.04 else 0.0
-                      samples[i] = pad + kick + hat
+                      pad_env = 0.55 + 0.45 * math.sin(math.pi * ((t % 2.0) / 2.0))
+                      pad = sum(math.sin(2 * math.pi * f * t) for f in chords[c_idx]) * 0.075 * pad_env
+                      b_pos = (t / beat_sec) % 1.0
+                      tick = 0.09 * math.exp(-(b_pos*beat_sec)*140.0) * math.sin(2*math.pi*1650.0*(b_pos*beat_sec)) if b_pos < 0.018 else 0.0
+                      bar_pos = (t / beat_sec) % 4.0
+                      pulse = 0.24 * math.exp(-(bar_pos*beat_sec)*10.0) * math.sin(2*math.pi*55.0*(bar_pos*beat_sec)) if bar_pos < 0.25 else 0.0
+                      samples[i] = pad + tick + pulse
                   write_wav('public/sfx/bgm.wav', samples)
                   resolved['bgm'] = 'sfx/bgm.wav'
 
@@ -163,9 +181,9 @@ jobs:
           sfx_files = ensure_sfx()
 
           # =====================================================================
-          # 2. MULTI-VOICE TTS GENERATOR WITH EXACT PER-LINE TIMING
+          # 2. CLEAN MULTI-VOICE TTS GENERATOR (NO gTTS FALLBACK ON CLEAN RU TEXT)
           # =====================================================================
-          def tts_save(text, out_path, voice='ru-RU-DmitryNeural', rate='+8%', pitch='+0Hz'):
+          def tts_save(text, out_path, voice='ru-RU-DmitryNeural', rate='+10%', pitch='+0Hz'):
               for attempt in range(3):
                   try:
                       asyncio.run(edge_tts.Communicate(text, voice, rate=rate, pitch=pitch).save(out_path))
@@ -178,7 +196,7 @@ jobs:
               gTTS(text=text, lang='ru').save(out_path)
 
           voice_fallback = os.environ.get('VOICE_RU') or 'Тестовый ролик готов.'
-          subs_fallback = os.environ.get('SUBS_KZ') or 'Бастауға керектің бәрі профильде.'
+          subs_fallback = os.environ.get('SUBS_KZ') or 'Жалғасы профильде.'
           cfg_raw = os.environ.get('CONFIG_JSON') or '{}'
           cfg = json.loads(cfg_raw) if cfg_raw.strip() else {}
 
@@ -188,7 +206,7 @@ jobs:
           right_c = chars.get('right') or {}
 
           FPS = 30
-          GAP_FRAMES = 6
+          GAP_FRAMES = 5
 
           if dialogue:
               cursor = 0
@@ -196,8 +214,8 @@ jobs:
                   spk = line.get('speaker', 'left')
                   c_cfg = left_c if spk == 'left' else right_c
                   default_voice = 'ru-RU-SvetlanaNeural' if c_cfg.get('role') == 'woman' else 'ru-RU-DmitryNeural'
-                  default_pitch = '+5Hz' if spk == 'left' else '-10Hz'
-                  default_rate = '+12%' if spk == 'left' else '+5%'
+                  default_pitch = '+0Hz' if spk == 'left' else '-8Hz'
+                  default_rate = '+10%' if spk == 'left' else '+6%'
 
                   v_name = c_cfg.get('voice', default_voice)
                   v_rate = c_cfg.get('rate', default_rate)
@@ -242,5 +260,5 @@ jobs:
         run: |
           curl -F "chat_id=${TG_CHAT_ID}" \
                -F "video=@out/video.mp4" \
-               -F "caption=🎬 Ролик v6.0 готов! (Диалог + КЗ локация + SFX)" \
+               -F "caption=🎬 Дневник лудомана (Master Engine v7.0) готов!" \
                "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendVideo"
